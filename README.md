@@ -41,9 +41,7 @@ Press `space` to toggle the LED state, `q` to quit.
 
 - Raspberry Pi (any model — RPi Zero, 3, 4, 5 all have an ACT LED)
 - Micro SD card
-- USB cable (for initial connection via Ethernet-over-USB)
-
-No breadboard, no LED, no resistor — the Pi's built-in green LED is used.
+- HDMI display + USB keyboard (the TUI renders to the Pi's console)
 
 ### Build and flash
 
@@ -54,30 +52,29 @@ mix firmware
 mix burn                  # insert SD card first
 ```
 
-### Connect
-
-```sh
-# Insert SD card into Pi, power on, wait ~30 seconds
-ssh nerves.local
-```
-
-The TUI starts automatically on boot. Press `space` to toggle the green ACT
-LED on the board. Press `q` to quit back to IEx.
-
-To start it again manually:
-
-```elixir
-iex> LedTui.run()
-```
-
-### Over-the-air updates
-
 After the first deploy, push firmware updates over the network:
 
 ```sh
 mix firmware
 mix upload nerves.local
 ```
+
+### Run
+
+Insert the SD card into the Pi, connect an HDMI display and USB keyboard,
+then power on. The TUI starts automatically on boot and renders to the
+HDMI display.
+
+Press `space` to toggle the green ACT LED on the board. Press `q` to quit
+back to IEx. To start it again:
+
+```elixir
+iex> LedTui.run()
+```
+
+> **Note:** The TUI uses the BEAM's stdout, which is the Pi's physical
+> console (HDMI/UART). It does not work over SSH — SSH sessions use
+> Erlang's shell, not a real terminal.
 
 ## How it works
 
@@ -128,4 +125,3 @@ No Rust toolchain is needed on the build machine.
 
 - [ExRatatui documentation](https://hexdocs.pm/ex_ratatui)
 - [Nerves getting started](https://hexdocs.pm/nerves/getting-started.html)
-- [Nerves project website](https://nerves-project.org/)

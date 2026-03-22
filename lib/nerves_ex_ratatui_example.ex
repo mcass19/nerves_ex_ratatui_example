@@ -1,4 +1,4 @@
-defmodule NervesExRatutuiExample do
+defmodule NervesExRatatuiExample do
   @moduledoc """
   Example Nerves project demonstrating ExRatatui on embedded hardware.
 

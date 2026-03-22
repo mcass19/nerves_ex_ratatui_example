@@ -1,4 +1,4 @@
-defmodule NervesExRatutuiExample.Application do
+defmodule NervesExRatatuiExample.Application do
   @moduledoc false
 
   use Application
@@ -10,7 +10,7 @@ defmodule NervesExRatutuiExample.Application do
         # Children for all targets
       ] ++ target_children()
 
-    opts = [strategy: :one_for_one, name: NervesExRatutuiExample.Supervisor]
+    opts = [strategy: :one_for_one, name: NervesExRatatuiExample.Supervisor]
     Supervisor.start_link(children, opts)
   end
 

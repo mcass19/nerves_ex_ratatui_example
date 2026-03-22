@@ -1,4 +1,4 @@
-defmodule NervesExRatutuiExample.MixProject do
+defmodule NervesExRatatuiExample.MixProject do
   use Mix.Project
 
   @app :nerves_ex_ratatui_example
@@ -21,7 +21,7 @@ defmodule NervesExRatutuiExample.MixProject do
   def application do
     [
       extra_applications: [:logger, :runtime_tools],
-      mod: {NervesExRatutuiExample.Application, []}
+      mod: {NervesExRatatuiExample.Application, []}
     ]
   end
 

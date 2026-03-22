@@ -1,4 +1,4 @@
-defmodule NervesExRatutuiExampleTest do
+defmodule NervesExRatatuiExampleTest do
   use ExUnit.Case
-  doctest NervesExRatutuiExample
+  doctest NervesExRatatuiExample
 end
