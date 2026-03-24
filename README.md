@@ -3,9 +3,9 @@
 Example Nerves project demonstrating [ExRatatui](https://github.com/mcass19/ex_ratatui)
 on embedded hardware. Includes two TUI applications that work on any machine. On a Raspberry Pi they render directly to the HDMI console.
 
-<!-- ![System Monitor](assets/system_monitor.png) -->
-<!---->
-<!-- ![LED](assets/led.png) -->
+![System Monitor](assets/system_monitor.png)
+
+![LED](assets/led.gif)
 
 ## Quick start
 
@@ -115,3 +115,6 @@ non-Nerves hosts.
 | `space` | toggle LED |
 | `q` | Quit |
 
+## License
+
+MIT — see [LICENSE](https://github.com/mcass19/nerves_ex_ratatui_example/blob/main/LICENSE) for details.
