@@ -1,11 +1,17 @@
 # Nerves ExRatatui Example
 
 Example Nerves project demonstrating [ExRatatui](https://github.com/mcass19/ex_ratatui)
-on embedded hardware. Provides a terminal UI for toggling the built-in green
-LED on a Raspberry Pi.
+on embedded hardware. Includes two TUI applications:
 
-When the LED sysfs path is not available (laptop, CI), the TUI runs in
-simulation mode — visuals work identically but no hardware is toggled.
+- **LedTui** — toggle the built-in green ACT LED on a Raspberry Pi
+- **SystemMonitorTui** — live dashboard for BEAM and system metrics
+
+Both work on any machine (laptop, CI). On non-Nerves hosts the LED TUI runs in
+simulation mode and the system monitor reads `/proc/meminfo` when available.
+
+## Examples
+
+### LED Control
 
 ```
 ╭ ExRatatui + Nerves ───────╮
@@ -22,6 +28,28 @@ simulation mode — visuals work identically but no hardware is toggled.
  space: toggle LED | q: quit
 ```
 
+### System Monitor
+
+```
+╭ ExRatatui + Nerves ──────────────────────────────────────╮
+│  BEAM System Monitor                                     │
+╰──────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────╮
+│  [1] Overview │ [2] Processes                            │
+╰──────────────────────────────────────────────────────────╯
+╭ Memory Usage ────────────────╮╭ System Info ──────────────╮
+│  ████████░░░░ 1.2 GB / 4 GB ││  OTP:        27           │
+╰──────────────────────────────╯│  Schedulers: 4/4          │
+╭ Memory Pools ────────────────╮│  Processes:  312/262144   │
+│  Processes [████░░] 45.2%    ││  Uptime:     2h 15m 30s   │
+│  Binary    [██░░░░] 22.1%    │╰───────────────────────────╯
+│  ETS       [█░░░░░]  8.3%   │╭ Scheduler Utilization ────╮
+╰──────────────────────────────╯│  Sched 1  [███░░░░]  42%  │
+                                │  Sched 2  [██░░░░░]  28%  │
+                                ╰───────────────────────────╯
+ 1/2: tabs | j/k: scroll | q: quit
+```
+
 ## Quick start (simulation)
 
 No hardware needed. Run on any machine:
@@ -30,10 +58,19 @@ No hardware needed. Run on any machine:
 git clone https://github.com/mcass19/nerves_ex_ratatui_example.git
 cd nerves_ex_ratatui_example
 mix deps.get
+```
+
+LED control:
+```sh
 mix run -e "LedTui.run()"
 ```
 
-Press `space` to toggle the LED state, `q` to quit.
+System monitor:
+```sh
+mix run -e "SystemMonitorTui.run()"
+```
+
+Press `q` to quit either TUI.
 
 ## Deploy to a Raspberry Pi
 
@@ -62,15 +99,14 @@ mix upload nerves.local
 ### Run
 
 Insert the SD card into the Pi, connect an HDMI display and USB keyboard,
-then power on. The TUI starts automatically on boot and renders to the
-HDMI display.
-
-Press `space` to toggle the green ACT LED on the board. Press `q` to quit
-back to IEx. To start it again:
+then power on. Once you see the IEx prompt, start either TUI:
 
 ```elixir
-iex> LedTui.run()
+iex> LedTui.run()            # LED control
+iex> SystemMonitorTui.run()   # system dashboard
 ```
+
+Press `q` to quit back to IEx. Run the command again to restart.
 
 > **Note:** The TUI uses the BEAM's stdout, which is the Pi's physical
 > console (HDMI/UART). It does not work over SSH — SSH sessions use
