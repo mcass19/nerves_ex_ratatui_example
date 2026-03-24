@@ -17,13 +17,13 @@ defmodule NervesExRatatuiExample.Application do
   if Mix.target() == :host do
     defp target_children do
       [
-        # On host, start the TUI manually with: LedTui.run()
+        # Children that only run on the host during development or test.
       ]
     end
   else
     defp target_children do
       [
-        LedTui
+        # Children for all targets except host
       ]
     end
   end

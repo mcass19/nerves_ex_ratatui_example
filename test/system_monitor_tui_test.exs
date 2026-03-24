@@ -11,15 +11,46 @@ defmodule SystemMonitorTuiTest do
       assert state.selected == 0
       assert is_map(state.mem)
       assert is_map(state.sys)
+      assert is_map(state.host)
+      assert is_map(state.cpu_load)
+      assert is_map(state.disk)
+      assert is_integer(state.host_uptime)
       assert is_list(state.top_procs)
       assert state.prev_sched_sample == nil or is_list(state.prev_sched_sample)
+    end
+
+    test "host info has expected keys" do
+      {:ok, state} = SystemMonitorTui.mount([])
+
+      assert is_binary(state.host.hostname)
+      assert is_binary(state.host.os)
+      assert is_binary(state.host.kernel)
+      assert is_binary(state.host.cpu_model)
+      assert is_integer(state.host.cpu_cores)
+      assert state.host.cpu_cores > 0
+      assert is_binary(state.host.arch)
+    end
+
+    test "cpu load and disk have expected keys" do
+      {:ok, state} = SystemMonitorTui.mount([])
+
+      assert is_float(state.cpu_load.load1)
+      assert is_float(state.cpu_load.load5)
+      assert is_float(state.cpu_load.load15)
+      assert is_integer(state.disk.total)
+      assert is_integer(state.disk.used)
+      assert state.disk.total > 0
     end
 
     test "memory data has expected keys" do
       {:ok, state} = SystemMonitorTui.mount([])
 
       assert is_integer(state.mem.total)
-      assert is_integer(state.mem.free)
+      assert is_integer(state.mem.available)
+      assert is_integer(state.mem.cached)
+      assert is_integer(state.mem.mem_free)
+      assert is_integer(state.mem.swap_total)
+      assert is_integer(state.mem.swap_used)
       assert is_integer(state.mem.beam_total)
       assert is_integer(state.mem.processes)
       assert is_integer(state.mem.binary)
@@ -213,14 +244,14 @@ defmodule SystemMonitorTuiTest do
   end
 
   describe "render/2 — overview tab" do
-    test "returns 7 widget-area pairs (header + tabs + footer + 4 body)" do
+    test "returns 9 widget-area pairs (header + tabs + footer + 6 body)" do
       {:ok, state} = SystemMonitorTui.mount([])
       frame = %ExRatatui.Frame{width: 120, height: 40}
 
       widgets = SystemMonitorTui.render(state, frame)
 
-      # header + tabs + footer + memory_gauge + system_info + memory_pools + scheduler
-      assert length(widgets) == 7
+      # header + tabs + footer + host_info + system_info + memory + cpu_disk + memory_pools + scheduler
+      assert length(widgets) == 9
     end
 
     test "all pairs are {widget_struct, rect}" do
@@ -270,11 +301,41 @@ defmodule SystemMonitorTuiTest do
       stop_tui(pid)
     end
 
-    test "renders memory usage section" do
+    test "renders host info section" do
       pid = start_tui()
       content = get_buffer(pid)
 
-      assert content =~ "Memory Usage"
+      assert content =~ "OS:"
+      assert content =~ "Kernel:"
+      assert content =~ "CPU:"
+      assert content =~ "Arch:"
+      assert content =~ "Uptime:"
+      assert content =~ "IP:"
+
+      stop_tui(pid)
+    end
+
+    test "renders memory section with RAM and swap" do
+      pid = start_tui()
+      content = get_buffer(pid)
+
+      assert content =~ "Memory"
+      assert content =~ "RAM:"
+      assert content =~ "Swap:"
+      assert content =~ "Cached:"
+
+      stop_tui(pid)
+    end
+
+    test "renders CPU and disk section" do
+      pid = start_tui()
+      content = get_buffer(pid)
+
+      assert content =~ "CPU & Disk"
+      assert content =~ "Load 1m:"
+      assert content =~ "Load 5m:"
+      assert content =~ "Load 15m:"
+      assert content =~ "Disk /:"
 
       stop_tui(pid)
     end
@@ -399,7 +460,11 @@ defmodule SystemMonitorTuiTest do
       selected: selected,
       mem: %{
         total: 4_294_967_296,
-        free: 2_147_483_648,
+        available: 2_147_483_648,
+        cached: 1_073_741_824,
+        mem_free: 1_073_741_824,
+        swap_total: 2_147_483_648,
+        swap_used: 536_870_912,
         beam_total: 100_000_000,
         processes: 45_000_000,
         binary: 22_000_000,
@@ -422,6 +487,19 @@ defmodule SystemMonitorTuiTest do
         uptime_ms: 8_130_000,
         scheduler_usage: List.duplicate(0.0, 8)
       },
+      host: %{
+        hostname: "test-host",
+        os: "Linux Test",
+        kernel: "6.0.0-test",
+        cpu_model: "Test CPU",
+        cpu_cores: 8,
+        arch: "x86_64",
+        primary_ip: {"eth0", "192.168.1.1"}
+      },
+      host_uptime: 86_400,
+      cpu_load: %{load1: 1.5, load5: 1.2, load15: 0.9},
+      cpu_temp: 45.0,
+      disk: %{total: 500_000_000_000, used: 200_000_000_000},
       top_procs: top_procs,
       prev_sched_sample: nil
     }
