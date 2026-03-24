@@ -3,10 +3,6 @@
 Example Nerves project demonstrating [ExRatatui](https://github.com/mcass19/ex_ratatui)
 on embedded hardware. Includes two TUI applications that work on any machine. On a Raspberry Pi they render directly to the HDMI console.
 
-![System Monitor](assets/system_monitor.png)
-
-![LED](assets/led.gif)
-
 ## Quick start
 
 ```sh
@@ -60,6 +56,8 @@ iex> LedTui.run()
 
 ## System Monitor
 
+![System Monitor](assets/system_monitor.png)
+
 A btop/fastfetch-inspired BEAM system monitor with two tabs.
 
 ### Overview
@@ -89,6 +87,8 @@ Top 20 BEAM processes by memory, with reductions and message queue length.
 | `q` | Quit |
 
 ## LED Control
+
+![LED](assets/led.gif)
 
 Toggle the Raspberry Pi's ACT LED from a TUI. Runs in simulation mode on
 non-Nerves hosts.
