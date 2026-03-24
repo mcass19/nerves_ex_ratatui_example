@@ -28,19 +28,20 @@ defmodule LedTui do
   alias ExRatatui.Style
   alias ExRatatui.Widgets.{Block, Paragraph}
 
-  @led_path "/sys/class/leds/ACT"
+  @default_led_path "/sys/class/leds/ACT"
 
   @impl true
-  def mount(_opts) do
-    hardware? = setup_led()
+  def mount(opts) do
+    led_path = Keyword.get(opts, :led_path, @default_led_path)
+    hardware? = setup_led(led_path)
 
     if hardware? do
-      Logger.info("LED at #{@led_path} — controlling onboard ACT LED")
+      Logger.info("LED at #{led_path} — controlling onboard ACT LED")
     else
       Logger.info("LED sysfs not found — running in simulation mode")
     end
 
-    {:ok, %{led_on: false, hardware: hardware?}}
+    {:ok, %{led_on: false, hardware: hardware?, led_path: led_path}}
   end
 
   @impl true
@@ -50,7 +51,7 @@ defmodule LedTui do
 
   def handle_event(%Event.Key{code: " ", kind: "press"}, state) do
     led_on = not state.led_on
-    write_led(state.hardware, led_on)
+    write_led(state, led_on)
     {:noreply, %{state | led_on: led_on}}
   end
 
@@ -60,7 +61,7 @@ defmodule LedTui do
 
   @impl true
   def terminate(_reason, state) do
-    write_led(state.hardware, false)
+    write_led(state, false)
   end
 
   @impl true
@@ -132,20 +133,20 @@ defmodule LedTui do
 
   # -- LED helpers (sysfs) --
 
-  defp setup_led do
-    if File.dir?(@led_path) do
-      File.write(Path.join(@led_path, "trigger"), "none")
+  defp setup_led(led_path) do
+    if File.dir?(led_path) do
+      File.write(Path.join(led_path, "trigger"), "none")
       true
     else
       false
     end
   end
 
-  defp write_led(false, _on?), do: :ok
+  defp write_led(%{hardware: false}, _on?), do: :ok
 
-  defp write_led(true, on?) do
+  defp write_led(%{hardware: true, led_path: led_path}, on?) do
     value = if on?, do: "1", else: "0"
-    File.write(Path.join(@led_path, "brightness"), value)
+    File.write(Path.join(led_path, "brightness"), value)
   end
 
   # -- Entry point --

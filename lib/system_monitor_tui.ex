@@ -36,6 +36,7 @@ defmodule SystemMonitorTui do
 
   @impl true
   def mount(_opts) do
+    :erlang.system_flag(:scheduler_wall_time, true)
     schedule_refresh()
     {:ok, build_state(0, 0, nil)}
   end
@@ -488,9 +489,6 @@ defmodule SystemMonitorTui do
   Starts the system monitor TUI and blocks until it exits.
   """
   def run do
-    # Enable scheduler wall time tracking for utilization stats
-    :erlang.system_flag(:scheduler_wall_time, true)
-
     {:ok, pid} = start_link([])
     ref = Process.monitor(pid)
 
