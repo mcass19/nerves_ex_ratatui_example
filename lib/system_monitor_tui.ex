@@ -455,21 +455,33 @@ defmodule SystemMonitorTui do
   end
 
   defp read_kernel_version do
-    :os.cmd(~c"uname -r") |> to_string() |> String.trim()
+    case File.read("/proc/version") do
+      {:ok, content} ->
+        case Regex.run(~r/Linux version (\S+)/, content) do
+          [_, version] -> version
+          _ -> "Linux"
+        end
+
+      _ ->
+        to_string(:erlang.system_info(:system_version)) |> String.trim()
+    end
   end
 
   defp read_cpu_model do
     case File.read("/proc/cpuinfo") do
       {:ok, content} ->
-        case Regex.run(~r/model name\s*:\s*(.+)/i, content) do
-          [_, model] ->
-            model |> String.trim() |> shorten_cpu_name()
+        cond do
+          match = Regex.run(~r/model name\s*:\s*(.+)/i, content) ->
+            match |> Enum.at(1) |> String.trim() |> shorten_cpu_name()
 
-          _ ->
-            case Regex.run(~r/Hardware\s*:\s*(.+)/i, content) do
-              [_, hw] -> String.trim(hw)
-              _ -> "Unknown"
-            end
+          match = Regex.run(~r/Hardware\s*:\s*(.+)/i, content) ->
+            Enum.at(match, 1) |> String.trim()
+
+          match = Regex.run(~r/Model\s*:\s*(.+)/i, content) ->
+            Enum.at(match, 1) |> String.trim()
+
+          true ->
+            "Unknown"
         end
 
       _ ->
@@ -485,7 +497,9 @@ defmodule SystemMonitorTui do
   end
 
   defp read_arch do
-    :os.cmd(~c"uname -m") |> to_string() |> String.trim()
+    to_string(:erlang.system_info(:system_architecture))
+    |> String.split("-")
+    |> List.first("unknown")
   end
 
   defp read_primary_ip do

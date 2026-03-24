@@ -31,6 +31,32 @@ defmodule SystemMonitorTuiTest do
       assert is_binary(state.host.arch)
     end
 
+    test "kernel version does not contain shell errors" do
+      {:ok, state} = SystemMonitorTui.mount([])
+
+      refute state.host.kernel =~ "not found"
+      refute state.host.kernel =~ "/bin/sh"
+      assert String.length(state.host.kernel) > 0
+    end
+
+    test "arch does not contain shell errors" do
+      {:ok, state} = SystemMonitorTui.mount([])
+
+      refute state.host.arch =~ "not found"
+      refute state.host.arch =~ "/bin/sh"
+      assert String.length(state.host.arch) > 0
+      # Should be a simple arch string like "x86_64", "aarch64", etc.
+      refute state.host.arch =~ " "
+    end
+
+    test "cpu model is not Unknown on a system with /proc/cpuinfo" do
+      {:ok, state} = SystemMonitorTui.mount([])
+
+      if File.exists?("/proc/cpuinfo") do
+        assert state.host.cpu_model != "Unknown"
+      end
+    end
+
     test "cpu load and disk have expected keys" do
       {:ok, state} = SystemMonitorTui.mount([])
 
@@ -311,6 +337,17 @@ defmodule SystemMonitorTuiTest do
       assert content =~ "Arch:"
       assert content =~ "Uptime:"
       assert content =~ "IP:"
+
+      stop_tui(pid)
+    end
+
+    test "host info does not contain shell errors" do
+      pid = start_tui()
+      content = get_buffer(pid)
+
+      refute content =~ "not found"
+      refute content =~ "/bin/sh"
+      refute content =~ "Unknown (#{:erlang.system_info(:logical_processors)})"
 
       stop_tui(pid)
     end
