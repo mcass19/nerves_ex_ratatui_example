@@ -88,8 +88,6 @@ Top 20 BEAM processes by memory, with reductions and message queue length.
 
 ## LED Control
 
-![LED](assets/led.gif)
-
 Toggle the Raspberry Pi's ACT LED from a TUI. Runs in simulation mode on
 non-Nerves hosts.
 
