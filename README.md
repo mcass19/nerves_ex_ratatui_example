@@ -52,7 +52,7 @@ iex> LedTui.run()
 ```
 
 > **Note:** The TUI renders to the Pi's physical console (HDMI/UART).
-> It does not work over SSH.
+> SSH support is being explored in [mcass19/ex_ratatui#33](https://github.com/mcass19/ex_ratatui/issues/33).
 
 ## System Monitor
 
