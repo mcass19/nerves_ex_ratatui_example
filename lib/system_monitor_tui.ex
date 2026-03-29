@@ -433,63 +433,64 @@ defmodule SystemMonitorTui do
     }
   end
 
-  defp read_hostname do
-    case File.read("/etc/hostname") do
-      {:ok, name} -> String.trim(name)
-      _ -> to_string(:net_adm.localhost())
+  defp read_hostname, do: parse_hostname_file(File.read("/etc/hostname"))
+
+  @doc false
+  def parse_hostname_file({:ok, name}), do: String.trim(name)
+  def parse_hostname_file(_), do: to_string(:net_adm.localhost())
+
+  defp read_os_name, do: parse_os_release_file(File.read("/etc/os-release"))
+
+  @doc false
+  def parse_os_release_file({:ok, content}) do
+    case Regex.run(~r/PRETTY_NAME="([^"]+)"/, content) do
+      [_, name] -> name
+      _ -> "Linux"
     end
   end
 
-  defp read_os_name do
-    case File.read("/etc/os-release") do
-      {:ok, content} ->
-        case Regex.run(~r/PRETTY_NAME="([^"]+)"/, content) do
-          [_, name] -> name
-          _ -> "Linux"
-        end
+  def parse_os_release_file(_) do
+    {family, name} = :os.type()
+    "#{family}/#{name}"
+  end
 
-      _ ->
-        {family, name} = :os.type()
-        "#{family}/#{name}"
+  defp read_kernel_version, do: parse_proc_version_file(File.read("/proc/version"))
+
+  @doc false
+  def parse_proc_version_file({:ok, content}) do
+    case Regex.run(~r/Linux version (\S+)/, content) do
+      [_, version] -> version
+      _ -> "Linux"
     end
   end
 
-  defp read_kernel_version do
-    case File.read("/proc/version") do
-      {:ok, content} ->
-        case Regex.run(~r/Linux version (\S+)/, content) do
-          [_, version] -> version
-          _ -> "Linux"
-        end
-
-      _ ->
-        to_string(:erlang.system_info(:system_version)) |> String.trim()
-    end
+  def parse_proc_version_file(_) do
+    to_string(:erlang.system_info(:system_version)) |> String.trim()
   end
 
-  defp read_cpu_model do
-    case File.read("/proc/cpuinfo") do
-      {:ok, content} ->
-        cond do
-          match = Regex.run(~r/model name\s*:\s*(.+)/i, content) ->
-            match |> Enum.at(1) |> String.trim() |> shorten_cpu_name()
+  defp read_cpu_model, do: parse_cpuinfo_file(File.read("/proc/cpuinfo"))
 
-          match = Regex.run(~r/Hardware\s*:\s*(.+)/i, content) ->
-            Enum.at(match, 1) |> String.trim()
+  @doc false
+  def parse_cpuinfo_file({:ok, content}) do
+    cond do
+      match = Regex.run(~r/model name\s*:\s*(.+)/i, content) ->
+        match |> Enum.at(1) |> String.trim() |> shorten_cpu_name()
 
-          match = Regex.run(~r/Model\s*:\s*(.+)/i, content) ->
-            Enum.at(match, 1) |> String.trim()
+      match = Regex.run(~r/Hardware\s*:\s*(.+)/i, content) ->
+        Enum.at(match, 1) |> String.trim()
 
-          true ->
-            "Unknown"
-        end
+      match = Regex.run(~r/Model\s*:\s*(.+)/i, content) ->
+        Enum.at(match, 1) |> String.trim()
 
-      _ ->
+      true ->
         "Unknown"
     end
   end
 
-  defp shorten_cpu_name(name) do
+  def parse_cpuinfo_file(_), do: "Unknown"
+
+  @doc false
+  def shorten_cpu_name(name) do
     name
     |> String.replace(~r/\(R\)|\(TM\)/i, "")
     |> String.replace(~r/\s+/, " ")
@@ -502,79 +503,81 @@ defmodule SystemMonitorTui do
     |> List.first("unknown")
   end
 
-  defp read_primary_ip do
-    case :inet.getifaddrs() do
-      {:ok, addrs} ->
-        addrs
-        |> Enum.flat_map(fn {name, opts} ->
-          name_str = to_string(name)
+  defp read_primary_ip, do: parse_ifaddrs(:inet.getifaddrs())
 
-          if name_str in ["lo", "lo0"] do
-            []
-          else
-            opts
-            |> Keyword.get_values(:addr)
-            |> Enum.filter(fn addr -> tuple_size(addr) == 4 end)
-            |> Enum.map(fn ip -> {name_str, ip_to_string(ip)} end)
-          end
-        end)
-        |> List.first()
+  @doc false
+  def parse_ifaddrs({:ok, addrs}) do
+    addrs
+    |> Enum.flat_map(fn {name, opts} ->
+      name_str = to_string(name)
 
-      _ ->
-        nil
-    end
+      if name_str in ["lo", "lo0"] do
+        []
+      else
+        opts
+        |> Keyword.get_values(:addr)
+        |> Enum.filter(fn addr -> tuple_size(addr) == 4 end)
+        |> Enum.map(fn ip -> {name_str, ip_to_string(ip)} end)
+      end
+    end)
+    |> List.first()
   end
+
+  def parse_ifaddrs(_), do: nil
 
   # -- Dynamic data collection --
 
   defp collect_memory do
     beam = :erlang.memory()
-
-    case File.read("/proc/meminfo") do
-      {:ok, content} ->
-        total_kb = parse_meminfo_kb(content, @meminfo_total_re)
-        available_kb = parse_meminfo_kb(content, @meminfo_available_re)
-        cached_kb = parse_meminfo_kb(content, @meminfo_cached_re)
-        free_kb = parse_meminfo_kb(content, @meminfo_free_re)
-        swap_total_kb = parse_meminfo_kb(content, @meminfo_swap_total_re)
-        swap_free_kb = parse_meminfo_kb(content, @meminfo_swap_free_re)
-
-        %{
-          total: total_kb * 1024,
-          available: available_kb * 1024,
-          cached: cached_kb * 1024,
-          mem_free: free_kb * 1024,
-          swap_total: swap_total_kb * 1024,
-          swap_used: (swap_total_kb - swap_free_kb) * 1024,
-          beam_total: beam[:total],
-          processes: beam[:processes],
-          binary: beam[:binary],
-          ets: beam[:ets],
-          atom: beam[:atom],
-          code: beam[:code]
-        }
-
-      {:error, _} ->
-        total = beam[:total]
-
-        %{
-          total: total * 2,
-          available: total,
-          cached: 0,
-          mem_free: total,
-          swap_total: 0,
-          swap_used: 0,
-          beam_total: total,
-          processes: beam[:processes],
-          binary: beam[:binary],
-          ets: beam[:ets],
-          atom: beam[:atom],
-          code: beam[:code]
-        }
-    end
+    build_memory_map(File.read("/proc/meminfo"), beam)
   end
 
-  defp parse_meminfo_kb(content, regex) do
+  @doc false
+  def build_memory_map({:ok, content}, beam) do
+    total_kb = parse_meminfo_kb(content, @meminfo_total_re)
+    available_kb = parse_meminfo_kb(content, @meminfo_available_re)
+    cached_kb = parse_meminfo_kb(content, @meminfo_cached_re)
+    free_kb = parse_meminfo_kb(content, @meminfo_free_re)
+    swap_total_kb = parse_meminfo_kb(content, @meminfo_swap_total_re)
+    swap_free_kb = parse_meminfo_kb(content, @meminfo_swap_free_re)
+
+    %{
+      total: total_kb * 1024,
+      available: available_kb * 1024,
+      cached: cached_kb * 1024,
+      mem_free: free_kb * 1024,
+      swap_total: swap_total_kb * 1024,
+      swap_used: (swap_total_kb - swap_free_kb) * 1024,
+      beam_total: beam[:total],
+      processes: beam[:processes],
+      binary: beam[:binary],
+      ets: beam[:ets],
+      atom: beam[:atom],
+      code: beam[:code]
+    }
+  end
+
+  def build_memory_map(_, beam) do
+    total = beam[:total]
+
+    %{
+      total: total * 2,
+      available: total,
+      cached: 0,
+      mem_free: total,
+      swap_total: 0,
+      swap_used: 0,
+      beam_total: total,
+      processes: beam[:processes],
+      binary: beam[:binary],
+      ets: beam[:ets],
+      atom: beam[:atom],
+      code: beam[:code]
+    }
+  end
+
+  @doc false
+  def parse_meminfo_kb(content, regex) do
     case Regex.run(regex, content) do
       [_, kb_str] -> String.to_integer(kb_str)
       _ -> 0
@@ -601,38 +604,40 @@ defmodule SystemMonitorTui do
     }
   end
 
-  defp read_cpu_load do
-    case File.read("/proc/loadavg") do
-      {:ok, content} ->
-        case String.split(content) do
-          [l1, l5, l15 | _] ->
-            %{load1: parse_float(l1), load5: parse_float(l5), load15: parse_float(l15)}
+  defp read_cpu_load, do: parse_loadavg_file(File.read("/proc/loadavg"))
 
-          _ ->
-            %{load1: 0.0, load5: 0.0, load15: 0.0}
-        end
+  @doc false
+  def parse_loadavg_file({:ok, content}) do
+    case String.split(content) do
+      [l1, l5, l15 | _] ->
+        %{load1: parse_float(l1), load5: parse_float(l5), load15: parse_float(l15)}
 
       _ ->
         %{load1: 0.0, load5: 0.0, load15: 0.0}
     end
   end
 
-  defp read_cpu_temp do
-    case File.read("/sys/class/thermal/thermal_zone0/temp") do
-      {:ok, content} ->
-        case content |> String.trim() |> Integer.parse() do
-          {millideg, _} -> millideg / 1000.0
-          :error -> nil
-        end
+  def parse_loadavg_file(_), do: %{load1: 0.0, load5: 0.0, load15: 0.0}
 
-      _ ->
-        nil
+  defp read_cpu_temp, do: parse_thermal_file(File.read("/sys/class/thermal/thermal_zone0/temp"))
+
+  @doc false
+  def parse_thermal_file({:ok, content}) do
+    case content |> String.trim() |> Integer.parse() do
+      {millideg, _} -> millideg / 1000.0
+      :error -> nil
     end
   end
 
+  def parse_thermal_file(_), do: nil
+
   defp read_disk do
     output = :os.cmd(~c"df -k / 2>/dev/null") |> to_string()
+    parse_df_output(output)
+  end
 
+  @doc false
+  def parse_df_output(output) do
     case String.split(output, "\n", trim: true) do
       [_header, data_line | _] ->
         case String.split(data_line, ~r/\s+/) do
@@ -652,80 +657,87 @@ defmodule SystemMonitorTui do
     _ -> %{total: 0, used: 0}
   end
 
-  defp read_host_uptime do
-    case File.read("/proc/uptime") do
-      {:ok, content} ->
-        case content |> String.split(" ") |> List.first() |> Float.parse() do
-          {seconds, _} -> trunc(seconds)
-          :error -> 0
-        end
+  defp read_host_uptime, do: parse_proc_uptime_file(File.read("/proc/uptime"))
 
-      _ ->
-        {uptime_ms, _} = :erlang.statistics(:wall_clock)
-        div(uptime_ms, 1000)
+  @doc false
+  def parse_proc_uptime_file({:ok, content}) do
+    case content |> String.split(" ") |> List.first() |> Float.parse() do
+      {seconds, _} -> trunc(seconds)
+      :error -> 0
     end
+  end
+
+  def parse_proc_uptime_file(_) do
+    {uptime_ms, _} = :erlang.statistics(:wall_clock)
+    div(uptime_ms, 1000)
   end
 
   defp collect_scheduler_usage(prev_sample) do
     online = :erlang.system_info(:schedulers_online)
+    wall_times = :erlang.statistics(:scheduler_wall_time_all)
+    compute_scheduler_usage(wall_times, prev_sample, online)
+  end
 
-    case :erlang.statistics(:scheduler_wall_time_all) do
-      wall_times when is_list(wall_times) ->
-        current =
-          wall_times
-          |> Enum.filter(fn {id, _, _} -> id <= online end)
-          |> Enum.sort_by(fn {id, _, _} -> id end)
+  @doc false
+  def compute_scheduler_usage(wall_times, prev_sample, online) when is_list(wall_times) do
+    current =
+      wall_times
+      |> Enum.filter(fn {id, _, _} -> id <= online end)
+      |> Enum.sort_by(fn {id, _, _} -> id end)
 
-        usage =
-          case prev_sample do
-            nil ->
-              List.duplicate(0.0, online)
+    usage =
+      case prev_sample do
+        nil ->
+          List.duplicate(0.0, online)
 
-            prev ->
-              Enum.zip(prev, current)
-              |> Enum.map(fn {{_, prev_active, prev_total}, {_, cur_active, cur_total}} ->
-                delta_total = cur_total - prev_total
+        prev ->
+          Enum.zip(prev, current)
+          |> Enum.map(fn {{_, prev_active, prev_total}, {_, cur_active, cur_total}} ->
+            delta_total = cur_total - prev_total
 
-                if delta_total > 0 do
-                  (cur_active - prev_active) / delta_total
-                else
-                  0.0
-                end
-              end)
-          end
+            if delta_total > 0 do
+              (cur_active - prev_active) / delta_total
+            else
+              0.0
+            end
+          end)
+      end
 
-        {usage, current}
+    {usage, current}
+  end
 
-      _ ->
-        {List.duplicate(0.0, online), nil}
-    end
+  def compute_scheduler_usage(_, _prev_sample, online) do
+    {List.duplicate(0.0, online), nil}
   end
 
   defp collect_top_processes(n) do
     Process.list()
-    |> Enum.map(fn pid ->
-      case Process.info(pid, [:registered_name, :memory, :reductions, :message_queue_len]) do
-        nil ->
-          nil
-
-        info ->
-          name =
-            case info[:registered_name] do
-              [] -> inspect(pid)
-              name -> inspect(name)
-            end
-
-          %{
-            name: name,
-            memory: info[:memory] || 0,
-            reductions: info[:reductions] || 0,
-            message_queue_len: info[:message_queue_len] || 0
-          }
-      end
-    end)
+    |> Enum.map(&process_info/1)
     |> Enum.reject(&is_nil/1)
     |> Enum.sort_by(& &1.memory, :desc)
     |> Enum.take(n)
+  end
+
+  @doc false
+  def process_info(pid) do
+    case Process.info(pid, [:registered_name, :memory, :reductions, :message_queue_len]) do
+      nil ->
+        nil
+
+      info ->
+        name =
+          case info[:registered_name] do
+            [] -> inspect(pid)
+            name -> inspect(name)
+          end
+
+        %{
+          name: name,
+          memory: info[:memory] || 0,
+          reductions: info[:reductions] || 0,
+          message_queue_len: info[:message_queue_len] || 0
+        }
+    end
   end
 
   # -- Helpers --
@@ -734,10 +746,12 @@ defmodule SystemMonitorTui do
     Process.send_after(self(), :refresh, @refresh_ms)
   end
 
-  defp safe_ratio(_num, 0), do: 0.0
-  defp safe_ratio(num, denom), do: (num / denom) |> max(0.0) |> min(1.0)
+  @doc false
+  def safe_ratio(_num, 0), do: 0.0
+  def safe_ratio(num, denom), do: (num / denom) |> max(0.0) |> min(1.0)
 
-  defp ratio_color(ratio) do
+  @doc false
+  def ratio_color(ratio) do
     cond do
       ratio > 0.85 -> :red
       ratio > 0.65 -> :yellow
@@ -745,7 +759,8 @@ defmodule SystemMonitorTui do
     end
   end
 
-  defp temp_indicator(temp) do
+  @doc false
+  def temp_indicator(temp) do
     cond do
       temp >= 80 -> " !!!"
       temp >= 70 -> " !!"
@@ -754,23 +769,26 @@ defmodule SystemMonitorTui do
     end
   end
 
-  defp format_bytes(bytes) when is_number(bytes) and bytes >= 1_073_741_824,
+  @doc false
+  def format_bytes(bytes) when is_number(bytes) and bytes >= 1_073_741_824,
     do: "#{Float.round(bytes / 1_073_741_824, 1)} GB"
 
-  defp format_bytes(bytes) when is_number(bytes) and bytes >= 1_048_576,
+  def format_bytes(bytes) when is_number(bytes) and bytes >= 1_048_576,
     do: "#{Float.round(bytes / 1_048_576, 1)} MB"
 
-  defp format_bytes(bytes) when is_number(bytes) and bytes >= 1024,
+  def format_bytes(bytes) when is_number(bytes) and bytes >= 1024,
     do: "#{Float.round(bytes / 1024, 1)} KB"
 
-  defp format_bytes(bytes) when is_number(bytes), do: "#{bytes} B"
-  defp format_bytes(_), do: "0 B"
+  def format_bytes(bytes) when is_number(bytes), do: "#{bytes} B"
+  def format_bytes(_), do: "0 B"
 
-  defp format_uptime(ms) do
+  @doc false
+  def format_uptime(ms) do
     format_uptime_seconds(div(ms, 1000))
   end
 
-  defp format_uptime_seconds(total_seconds) do
+  @doc false
+  def format_uptime_seconds(total_seconds) do
     days = div(total_seconds, 86_400)
     hours = div(rem(total_seconds, 86_400), 3600)
     minutes = div(rem(total_seconds, 3600), 60)
@@ -783,37 +801,44 @@ defmodule SystemMonitorTui do
     end
   end
 
-  defp format_load(value) do
+  @doc false
+  def format_load(value) do
     :erlang.float_to_binary(value, decimals: 2)
   end
 
-  defp parse_float(str) do
+  @doc false
+  def parse_float(str) do
     case Float.parse(str) do
       {val, _} -> val
       :error -> 0.0
     end
   end
 
-  defp percentage_str(ratio) do
+  @doc false
+  def percentage_str(ratio) do
     pct = (ratio * 100) |> Float.round(0) |> trunc()
     "#{pct}%"
   end
 
-  defp progress_bar(ratio, width) do
+  @doc false
+  def progress_bar(ratio, width) do
     filled = round(ratio * width)
     empty = width - filled
     "[" <> String.duplicate("\u2588", filled) <> String.duplicate("\u2591", empty) <> "]"
   end
 
-  defp ip_to_string({a, b, c, d}), do: "#{a}.#{b}.#{c}.#{d}"
+  @doc false
+  def ip_to_string({a, b, c, d}), do: "#{a}.#{b}.#{c}.#{d}"
 
   # -- Entry point --
 
   @doc """
   Starts the system monitor TUI and blocks until it exits.
+
+  Accepts the same options as `start_link/1`.
   """
-  def run do
-    {:ok, pid} = start_link([])
+  def run(opts) do
+    {:ok, pid} = start_link(opts)
     ref = Process.monitor(pid)
 
     receive do

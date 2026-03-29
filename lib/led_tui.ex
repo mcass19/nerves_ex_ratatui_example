@@ -153,9 +153,11 @@ defmodule LedTui do
 
   @doc """
   Starts the TUI and blocks until it exits.
+
+  Accepts the same options as `start_link/1`.
   """
-  def run do
-    {:ok, pid} = start_link([])
+  def run(opts) do
+    {:ok, pid} = start_link(opts)
     ref = Process.monitor(pid)
 
     receive do

@@ -473,6 +473,448 @@ defmodule SystemMonitorTuiTest do
     end
   end
 
+  describe "run/1" do
+    test "starts and stops cleanly in test mode" do
+      task =
+        Task.async(fn ->
+          SystemMonitorTui.run(name: :test_sysmon_run, test_mode: {80, 24})
+        end)
+
+      Process.sleep(100)
+      pid = Process.whereis(:test_sysmon_run)
+      GenServer.stop(pid)
+      assert Task.await(task, 1000) == :ok
+    end
+  end
+
+  describe "render/2 — nil primary_ip" do
+    test "renders N/A when primary_ip is nil" do
+      state = build_test_state() |> put_in([:host, :primary_ip], nil)
+      frame = %ExRatatui.Frame{width: 120, height: 40}
+
+      widgets = SystemMonitorTui.render(state, frame)
+      assert is_list(widgets)
+    end
+  end
+
+  describe "render/2 — nil cpu_temp" do
+    test "renders N/A when cpu_temp is nil" do
+      state = build_test_state() |> Map.put(:cpu_temp, nil)
+      frame = %ExRatatui.Frame{width: 120, height: 40}
+
+      widgets = SystemMonitorTui.render(state, frame)
+      assert is_list(widgets)
+    end
+  end
+
+  describe "render/2 — high memory ratio" do
+    test "triggers red ratio_color when usage > 85%" do
+      state =
+        build_test_state()
+        |> put_in([:mem, :total], 1000)
+        |> put_in([:mem, :available], 100)
+
+      frame = %ExRatatui.Frame{width: 120, height: 40}
+
+      widgets = SystemMonitorTui.render(state, frame)
+      assert is_list(widgets)
+    end
+  end
+
+  describe "render/2 — zero denominators" do
+    test "handles zero total in memory" do
+      state =
+        build_test_state()
+        |> put_in([:mem, :total], 0)
+        |> put_in([:mem, :swap_total], 0)
+        |> put_in([:mem, :beam_total], 0)
+        |> put_in([:disk, :total], 0)
+
+      frame = %ExRatatui.Frame{width: 120, height: 40}
+
+      widgets = SystemMonitorTui.render(state, frame)
+      assert is_list(widgets)
+    end
+  end
+
+  describe "render/2 — small byte values" do
+    test "format_bytes handles values under 1024" do
+      state =
+        build_test_state()
+        |> put_in([:mem, :cached], 500)
+        |> put_in([:mem, :mem_free], 200)
+
+      frame = %ExRatatui.Frame{width: 120, height: 40}
+
+      widgets = SystemMonitorTui.render(state, frame)
+      assert is_list(widgets)
+    end
+  end
+
+  describe "pure helpers" do
+    test "safe_ratio returns 0.0 when denominator is 0" do
+      assert SystemMonitorTui.safe_ratio(100, 0) == 0.0
+    end
+
+    test "safe_ratio clamps between 0.0 and 1.0" do
+      assert SystemMonitorTui.safe_ratio(1, 2) == 0.5
+      assert SystemMonitorTui.safe_ratio(2, 1) == 1.0
+    end
+
+    test "ratio_color returns :red for ratio > 0.85" do
+      assert SystemMonitorTui.ratio_color(0.9) == :red
+    end
+
+    test "ratio_color returns :yellow for ratio > 0.65" do
+      assert SystemMonitorTui.ratio_color(0.7) == :yellow
+    end
+
+    test "ratio_color returns :green for low ratio" do
+      assert SystemMonitorTui.ratio_color(0.3) == :green
+    end
+
+    test "temp_indicator returns empty for temp < 55" do
+      assert SystemMonitorTui.temp_indicator(40.0) == ""
+    end
+
+    test "temp_indicator returns ! for temp >= 55" do
+      assert SystemMonitorTui.temp_indicator(55.0) == " !"
+    end
+
+    test "temp_indicator returns !! for temp >= 70" do
+      assert SystemMonitorTui.temp_indicator(70.0) == " !!"
+    end
+
+    test "temp_indicator returns !!! for temp >= 80" do
+      assert SystemMonitorTui.temp_indicator(80.0) == " !!!"
+    end
+
+    test "format_bytes for values under 1024" do
+      assert SystemMonitorTui.format_bytes(500) == "500 B"
+    end
+
+    test "format_bytes for non-number" do
+      assert SystemMonitorTui.format_bytes(nil) == "0 B"
+    end
+
+    test "format_bytes for KB range" do
+      assert SystemMonitorTui.format_bytes(2048) == "2.0 KB"
+    end
+
+    test "format_bytes for MB range" do
+      assert SystemMonitorTui.format_bytes(2_097_152) == "2.0 MB"
+    end
+
+    test "format_bytes for GB range" do
+      assert SystemMonitorTui.format_bytes(2_147_483_648) == "2.0 GB"
+    end
+
+    test "parse_float returns 0.0 for invalid input" do
+      assert SystemMonitorTui.parse_float("not_a_number") == 0.0
+    end
+
+    test "parse_float parses valid floats" do
+      assert SystemMonitorTui.parse_float("1.5") == 1.5
+    end
+
+    test "parse_meminfo_kb returns 0 for no match" do
+      assert SystemMonitorTui.parse_meminfo_kb("no match here", ~r/MemTotal:\s+(\d+)\s+kB/) == 0
+    end
+
+    test "parse_meminfo_kb parses matching content" do
+      assert SystemMonitorTui.parse_meminfo_kb(
+               "MemTotal:  8000000 kB",
+               ~r/MemTotal:\s+(\d+)\s+kB/
+             ) == 8_000_000
+    end
+
+    test "format_uptime_seconds with days" do
+      assert SystemMonitorTui.format_uptime_seconds(90_000) == "1d 1h 0m"
+    end
+
+    test "format_uptime_seconds with hours" do
+      assert SystemMonitorTui.format_uptime_seconds(3661) == "1h 1m 1s"
+    end
+
+    test "format_uptime_seconds with minutes only" do
+      assert SystemMonitorTui.format_uptime_seconds(65) == "1m 5s"
+    end
+
+    test "format_uptime with milliseconds" do
+      assert SystemMonitorTui.format_uptime(65_000) == "1m 5s"
+    end
+
+    test "format_load formats float" do
+      assert SystemMonitorTui.format_load(1.5) == "1.50"
+    end
+
+    test "percentage_str formats ratio as percentage" do
+      assert SystemMonitorTui.percentage_str(0.5) == "50%"
+    end
+
+    test "progress_bar creates bar of correct width" do
+      bar = SystemMonitorTui.progress_bar(0.5, 10)
+      assert String.starts_with?(bar, "[")
+      assert String.ends_with?(bar, "]")
+    end
+
+    test "ip_to_string formats tuple" do
+      assert SystemMonitorTui.ip_to_string({192, 168, 1, 1}) == "192.168.1.1"
+    end
+
+    test "shorten_cpu_name removes (R) and (TM)" do
+      assert SystemMonitorTui.shorten_cpu_name("Intel(R) Core(TM) i7") == "Intel Core i7"
+    end
+  end
+
+  describe "I/O parsing — hostname" do
+    test "parse_hostname_file with valid content" do
+      assert SystemMonitorTui.parse_hostname_file({:ok, "my-host\n"}) == "my-host"
+    end
+
+    test "parse_hostname_file with error falls back to net_adm" do
+      result = SystemMonitorTui.parse_hostname_file({:error, :enoent})
+      assert is_binary(result)
+    end
+  end
+
+  describe "I/O parsing — os release" do
+    test "parse_os_release_file with PRETTY_NAME" do
+      content = ~s(PRETTY_NAME="Ubuntu 22.04 LTS"\nNAME="Ubuntu"\n)
+      assert SystemMonitorTui.parse_os_release_file({:ok, content}) == "Ubuntu 22.04 LTS"
+    end
+
+    test "parse_os_release_file without PRETTY_NAME" do
+      assert SystemMonitorTui.parse_os_release_file({:ok, "NAME=Linux\n"}) == "Linux"
+    end
+
+    test "parse_os_release_file with error" do
+      result = SystemMonitorTui.parse_os_release_file({:error, :enoent})
+      assert is_binary(result)
+      assert result =~ "/"
+    end
+  end
+
+  describe "I/O parsing — kernel version" do
+    test "parse_proc_version_file with Linux version" do
+      content = "Linux version 6.0.0-test (gcc) #1 SMP"
+      assert SystemMonitorTui.parse_proc_version_file({:ok, content}) == "6.0.0-test"
+    end
+
+    test "parse_proc_version_file without Linux version" do
+      assert SystemMonitorTui.parse_proc_version_file({:ok, "something else"}) == "Linux"
+    end
+
+    test "parse_proc_version_file with error" do
+      result = SystemMonitorTui.parse_proc_version_file({:error, :enoent})
+      assert is_binary(result)
+    end
+  end
+
+  describe "I/O parsing — cpuinfo" do
+    test "parse_cpuinfo_file with model name" do
+      content = "model name\t: Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz\n"
+      result = SystemMonitorTui.parse_cpuinfo_file({:ok, content})
+      assert result =~ "Intel"
+      refute result =~ "(R)"
+    end
+
+    test "parse_cpuinfo_file with Hardware line" do
+      content = "Hardware\t: BCM2835\n"
+      assert SystemMonitorTui.parse_cpuinfo_file({:ok, content}) == "BCM2835"
+    end
+
+    test "parse_cpuinfo_file with Model line" do
+      content = "Model\t: Raspberry Pi 4 Model B Rev 1.4\n"
+
+      assert SystemMonitorTui.parse_cpuinfo_file({:ok, content}) ==
+               "Raspberry Pi 4 Model B Rev 1.4"
+    end
+
+    test "parse_cpuinfo_file with no matching line" do
+      assert SystemMonitorTui.parse_cpuinfo_file({:ok, "processor\t: 0\n"}) == "Unknown"
+    end
+
+    test "parse_cpuinfo_file with error" do
+      assert SystemMonitorTui.parse_cpuinfo_file({:error, :enoent}) == "Unknown"
+    end
+  end
+
+  describe "I/O parsing — memory" do
+    test "build_memory_map with valid meminfo content" do
+      content = """
+      MemTotal:        8000000 kB
+      MemFree:         2000000 kB
+      MemAvailable:    4000000 kB
+      Cached:          1000000 kB
+      SwapTotal:       2000000 kB
+      SwapFree:        1500000 kB
+      """
+
+      beam = [
+        total: 100_000,
+        processes: 50_000,
+        binary: 20_000,
+        ets: 10_000,
+        atom: 5_000,
+        code: 15_000
+      ]
+
+      result = SystemMonitorTui.build_memory_map({:ok, content}, beam)
+      assert result.total == 8_000_000 * 1024
+      assert result.beam_total == 100_000
+    end
+
+    test "build_memory_map with error falls back to beam memory" do
+      beam = [
+        total: 100_000,
+        processes: 50_000,
+        binary: 20_000,
+        ets: 10_000,
+        atom: 5_000,
+        code: 15_000
+      ]
+
+      result = SystemMonitorTui.build_memory_map({:error, :enoent}, beam)
+      assert result.total == 200_000
+      assert result.beam_total == 100_000
+      assert result.swap_total == 0
+    end
+  end
+
+  describe "I/O parsing — cpu load" do
+    test "parse_loadavg_file with valid content" do
+      result = SystemMonitorTui.parse_loadavg_file({:ok, "1.50 1.20 0.90 2/300 12345"})
+      assert result.load1 == 1.5
+      assert result.load5 == 1.2
+      assert result.load15 == 0.9
+    end
+
+    test "parse_loadavg_file with insufficient fields" do
+      result = SystemMonitorTui.parse_loadavg_file({:ok, "1.50"})
+      assert result == %{load1: 0.0, load5: 0.0, load15: 0.0}
+    end
+
+    test "parse_loadavg_file with error" do
+      result = SystemMonitorTui.parse_loadavg_file({:error, :enoent})
+      assert result == %{load1: 0.0, load5: 0.0, load15: 0.0}
+    end
+  end
+
+  describe "I/O parsing — cpu temp" do
+    test "parse_thermal_file with valid content" do
+      assert SystemMonitorTui.parse_thermal_file({:ok, "45000\n"}) == 45.0
+    end
+
+    test "parse_thermal_file with non-numeric content" do
+      assert SystemMonitorTui.parse_thermal_file({:ok, "not_a_number\n"}) == nil
+    end
+
+    test "parse_thermal_file with error" do
+      assert SystemMonitorTui.parse_thermal_file({:error, :enoent}) == nil
+    end
+  end
+
+  describe "I/O parsing — disk" do
+    test "parse_df_output with valid output" do
+      output =
+        "Filesystem     1K-blocks    Used Available Use% Mounted on\n/dev/sda1      500000000 200000000 300000000  40% /\n"
+
+      result = SystemMonitorTui.parse_df_output(output)
+      assert result.total == 500_000_000 * 1024
+      assert result.used == 200_000_000 * 1024
+    end
+
+    test "parse_df_output with invalid data line" do
+      output = "Filesystem\nbadline\n"
+      assert SystemMonitorTui.parse_df_output(output) == %{total: 0, used: 0}
+    end
+
+    test "parse_df_output with no data" do
+      assert SystemMonitorTui.parse_df_output("") == %{total: 0, used: 0}
+    end
+  end
+
+  describe "I/O parsing — host uptime" do
+    test "parse_proc_uptime_file with valid content" do
+      assert SystemMonitorTui.parse_proc_uptime_file({:ok, "12345.67 98765.43"}) == 12345
+    end
+
+    test "parse_proc_uptime_file with unparseable content" do
+      assert SystemMonitorTui.parse_proc_uptime_file({:ok, "not_a_number rest"}) == 0
+    end
+
+    test "parse_proc_uptime_file with error falls back to wall_clock" do
+      result = SystemMonitorTui.parse_proc_uptime_file({:error, :enoent})
+      assert is_integer(result)
+      assert result >= 0
+    end
+  end
+
+  describe "I/O parsing — ifaddrs" do
+    test "parse_ifaddrs with error" do
+      assert SystemMonitorTui.parse_ifaddrs({:error, :enoent}) == nil
+    end
+
+    test "parse_ifaddrs with loopback only" do
+      addrs = [{~c"lo", [addr: {127, 0, 0, 1}]}]
+      assert SystemMonitorTui.parse_ifaddrs({:ok, addrs}) == nil
+    end
+
+    test "parse_ifaddrs with non-loopback interface" do
+      addrs = [{~c"eth0", [addr: {192, 168, 1, 100}]}]
+      assert SystemMonitorTui.parse_ifaddrs({:ok, addrs}) == {"eth0", "192.168.1.100"}
+    end
+  end
+
+  describe "scheduler usage computation" do
+    test "compute_scheduler_usage with non-list input" do
+      {usage, sample} = SystemMonitorTui.compute_scheduler_usage(:undefined, nil, 4)
+      assert usage == [0.0, 0.0, 0.0, 0.0]
+      assert sample == nil
+    end
+
+    test "compute_scheduler_usage with wall_times and no previous sample" do
+      wall_times = [{1, 100, 1000}, {2, 200, 2000}]
+      {usage, current} = SystemMonitorTui.compute_scheduler_usage(wall_times, nil, 2)
+      assert usage == [0.0, 0.0]
+      assert is_list(current)
+    end
+
+    test "compute_scheduler_usage with previous sample" do
+      prev = [{1, 50, 500}, {2, 100, 1000}]
+      current = [{1, 100, 1000}, {2, 200, 2000}]
+      {usage, _} = SystemMonitorTui.compute_scheduler_usage(current, prev, 2)
+      assert length(usage) == 2
+      for u <- usage, do: assert(u >= 0.0 and u <= 1.0)
+    end
+  end
+
+  describe "process_info/1" do
+    test "returns nil for dead process" do
+      pid = spawn(fn -> :ok end)
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, _reason}
+
+      assert SystemMonitorTui.process_info(pid) == nil
+    end
+
+    test "returns process info for live process" do
+      result = SystemMonitorTui.process_info(self())
+      assert is_map(result)
+      assert is_binary(result.name)
+      assert is_integer(result.memory)
+    end
+  end
+
+  describe "parse_df_output rescue" do
+    test "returns zero map when input causes exception" do
+      # String.to_integer will raise on non-numeric data in the total/used positions
+      output = "Filesystem 1K-blocks Used\n/dev/sda1 not_a_number also_not 300000 40% /\n"
+      assert SystemMonitorTui.parse_df_output(output) == %{total: 0, used: 0}
+    end
+  end
+
   # -- Helpers --
 
   defp key(code), do: %Event.Key{code: code, kind: "press"}

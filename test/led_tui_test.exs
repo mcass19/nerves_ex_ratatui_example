@@ -158,6 +158,20 @@ defmodule LedTuiTest do
     end
   end
 
+  describe "run/1" do
+    test "starts and stops cleanly in test mode" do
+      task =
+        Task.async(fn ->
+          LedTui.run(name: :test_led_run, test_mode: {60, 20})
+        end)
+
+      Process.sleep(100)
+      pid = Process.whereis(:test_led_run)
+      GenServer.stop(pid)
+      assert Task.await(task, 1000) == :ok
+    end
+  end
+
   # -- Helpers --
 
   defp key(code), do: %Event.Key{code: code, kind: "press"}
