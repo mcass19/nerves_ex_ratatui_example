@@ -48,19 +48,16 @@ config :nerves, :erlinit, update_clock: true
 # `ssh nerves@nerves.local` still drops you into the regular IEx shell,
 # so you keep the manual `iex> SystemMonitorTui.run()` path too.
 #
-# Note: each subsystem entry below is the literal tuple
-# `ExRatatui.SSH.subsystem/1` would return — see its docs for the shape.
-# We inline it here on purpose: when `MIX_TARGET=rpi4 mix compile` (or
-# any other non-host target) loads this file, Mix hasn't compiled deps
-# for the target yet, so calling `ExRatatui.SSH.subsystem(...)` blows up
-# with "module ExRatatui.SSH is not available". Module *atoms* work fine
-# without the module being loaded — function calls don't.
-#
-# The `subsystem: true` flag tells the channel handler it was dispatched
-# via OTP's `:subsystems` path. OTP consumes the `{:subsystem, ...}`
-# request internally when it matches a registered name, so the handler
-# only ever sees `{:ssh_channel_up, ...}` — without this flag, the
-# handler would wait forever for a shell request that never comes.
+# `authorized_keys` is set here (build-time) because we need to read the
+# developer's public keys from `~/.ssh/` on the build host and bake them
+# into the firmware — those files don't exist on the device. The
+# `subsystems:` list, by contrast, lives in `config/runtime.exs`: it
+# needs to call `ExRatatui.SSH.subsystem/1`, and on a fresh
+# `MIX_TARGET=rpi4 mix compile` this file gets evaluated before Mix has
+# compiled deps for the target — so `ExRatatui.SSH` isn't loaded yet and
+# any function call against it crashes. `runtime.exs` runs at device
+# boot, after all beam files are loaded, so the helper is safe to call
+# there.
 
 keys =
   System.user_home!()
@@ -75,13 +72,7 @@ if keys == [],
     See your project's config.exs for this error message.
     """)
 
-config :nerves_ssh,
-  authorized_keys: Enum.map(keys, &File.read!/1),
-  subsystems: [
-    :ssh_sftpd.subsystem_spec(cwd: ~c"/"),
-    {~c"Elixir.SystemMonitorTui", {ExRatatui.SSH, [mod: SystemMonitorTui, subsystem: true]}},
-    {~c"Elixir.LedTui", {ExRatatui.SSH, [mod: LedTui, subsystem: true]}}
-  ]
+config :nerves_ssh, authorized_keys: Enum.map(keys, &File.read!/1)
 
 # Configure the network using vintage_net
 #

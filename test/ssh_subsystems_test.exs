@@ -2,7 +2,7 @@ defmodule SshSubsystemsTest do
   @moduledoc """
   Verifies the wiring between this project's TUI modules and the
   `ExRatatui.SSH.subsystem/1` helper that registers them with
-  `nerves_ssh` (see `config/target.exs`).
+  `nerves_ssh` (see `config/runtime.exs`).
 
   Tests run on the host target — they don't open an SSH socket, they
   just check that the spec tuples we install on the device have the
@@ -39,7 +39,7 @@ defmodule SshSubsystemsTest do
     end
   end
 
-  describe "subsystem list as it appears in target.exs" do
+  describe "subsystem list as it appears in runtime.exs" do
     # NOTE: `NervesSSH.Options` is only available when the suite runs
     # under a real Nerves target (`MIX_TARGET=rpi*`). On `MIX_TARGET=host`
     # (the default for `mix test` on a laptop) it isn't on the code path,
@@ -47,7 +47,7 @@ defmodule SshSubsystemsTest do
     # check. The "real" cross-check against `nerves_ssh`'s own option
     # parser only fires when CI builds firmware for an actual board.
     test "the list nerves_ssh receives passes its own validator" do
-      # Mirror exactly what config/target.exs ships to :nerves_ssh.
+      # Mirror exactly what config/runtime.exs ships to :nerves_ssh.
       subsystems = [
         :ssh_sftpd.subsystem_spec(cwd: ~c"/"),
         ExRatatui.SSH.subsystem(SystemMonitorTui),
