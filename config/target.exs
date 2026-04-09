@@ -30,6 +30,37 @@ config :nerves, :erlinit, update_clock: true
 #
 # * See https://hexdocs.pm/nerves_ssh/readme.html for general SSH configuration
 # * See https://hexdocs.pm/ssh_subsystem_fwup/readme.html for firmware updates
+#
+# In addition to the standard IEx shell, both example TUIs are registered
+# as SSH subsystems pointing at `ExRatatui.SSH`. From any client with an
+# authorized key:
+#
+#     ssh -t nerves@nerves.local -s Elixir.SystemMonitorTui
+#     ssh -t nerves@nerves.local -s Elixir.LedTui
+#
+# The `-t` is **required** for interactive TUI use — OpenSSH does not
+# allocate a PTY by default for `-s` (subsystem) mode, so without it the
+# local terminal stays in cooked mode and keystrokes get line-buffered
+# and echoed locally instead of flowing to the TUI.
+#
+# The TUI runs entirely on the device — the SSH channel just shuttles
+# render bytes to your terminal and key events back. Plain
+# `ssh nerves@nerves.local` still drops you into the regular IEx shell,
+# so you keep the manual `iex> SystemMonitorTui.run()` path too.
+#
+# Note: each subsystem entry below is the literal tuple
+# `ExRatatui.SSH.subsystem/1` would return — see its docs for the shape.
+# We inline it here on purpose: when `MIX_TARGET=rpi4 mix compile` (or
+# any other non-host target) loads this file, Mix hasn't compiled deps
+# for the target yet, so calling `ExRatatui.SSH.subsystem(...)` blows up
+# with "module ExRatatui.SSH is not available". Module *atoms* work fine
+# without the module being loaded — function calls don't.
+#
+# The `subsystem: true` flag tells the channel handler it was dispatched
+# via OTP's `:subsystems` path. OTP consumes the `{:subsystem, ...}`
+# request internally when it matches a registered name, so the handler
+# only ever sees `{:ssh_channel_up, ...}` — without this flag, the
+# handler would wait forever for a shell request that never comes.
 
 keys =
   System.user_home!()
@@ -45,7 +76,12 @@ if keys == [],
     """)
 
 config :nerves_ssh,
-  authorized_keys: Enum.map(keys, &File.read!/1)
+  authorized_keys: Enum.map(keys, &File.read!/1),
+  subsystems: [
+    :ssh_sftpd.subsystem_spec(cwd: ~c"/"),
+    {~c"Elixir.SystemMonitorTui", {ExRatatui.SSH, [mod: SystemMonitorTui, subsystem: true]}},
+    {~c"Elixir.LedTui", {ExRatatui.SSH, [mod: LedTui, subsystem: true]}}
+  ]
 
 # Configure the network using vintage_net
 #

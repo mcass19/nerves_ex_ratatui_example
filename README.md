@@ -1,7 +1,6 @@
 # Nerves ExRatatui Example
 
-Example Nerves project demonstrating [ExRatatui](https://github.com/mcass19/ex_ratatui)
-on embedded hardware. Includes two TUI applications that work on any machine. On a Raspberry Pi they render directly to the HDMI console.
+Example Nerves project demonstrating [ExRatatui](https://github.com/mcass19/ex_ratatui) on embedded hardware. Includes two TUI applications that work on any machine. On a Raspberry Pi they render directly to the HDMI console **and** are reachable over SSH from any laptop on the network.
 
 ## Quick start
 
@@ -24,7 +23,7 @@ Press `q` to quit either TUI.
 
 - Raspberry Pi (any model — RPi Zero, 3, 4, 5 all have an ACT LED)
 - Micro SD card
-- HDMI display + USB keyboard
+- HDMI display + USB keyboard *or* a network connection for SSH
 
 ### Build and flash
 
@@ -42,7 +41,7 @@ mix firmware
 mix upload nerves.local
 ```
 
-### Run on the Pi
+### Run on the Pi (HDMI/console)
 
 Connect HDMI + USB keyboard, power on, and at the IEx prompt:
 
@@ -51,12 +50,26 @@ iex> SystemMonitorTui.run()
 iex> LedTui.run()
 ```
 
-> **Note:** The TUI renders to the Pi's physical console (HDMI/UART).
-> SSH support is being explored in [mcass19/ex_ratatui#33](https://github.com/mcass19/ex_ratatui/issues/33).
+### Run over SSH (no display required)
+
+Both TUIs are also registered as SSH subsystems via the `nerves_ssh` daemon that ships with `nerves_pack`. From any machine whose public key is in your `~/.ssh/`:
+
+```sh
+ssh -t nerves@nerves.local -s Elixir.SystemMonitorTui
+ssh -t nerves@nerves.local -s Elixir.LedTui
+```
+
+The `-t` is **required**: OpenSSH doesn't allocate a PTY by default for `-s` (subsystem) mode, and without one your local terminal stays in cooked mode — keystrokes get line-buffered and echoed locally on top of the TUI, and the alt-screen teardown on disconnect bleeds into your shell prompt.
+
+The TUI runs entirely on the device — the SSH channel just shuttles render bytes to your terminal and key events back to the Pi. Quit with `q` and the channel cleans up its alt-screen on the way out, leaving your scrollback intact.
+
+Plain `ssh nerves@nerves.local` (no `-s`) still drops you into the regular Nerves IEx shell, so the manual `iex> SystemMonitorTui.run()` path keeps working unchanged.
+
+> **How it works:** `ExRatatui.SSH.subsystem/1` plugs an `ExRatatui.App` module into the OTP `:ssh.subsystem_spec()` shape that `nerves_ssh` already speaks. Each connected client gets its own isolated TUI session — multiple `ssh` clients to the same Pi are independent. See the [SSH transport guide](https://hexdocs.pm/ex_ratatui/ssh_transport.html) in the ex_ratatui docs for the full architecture.
+
+The subsystem name is the full Elixir module name as a charlist, so multiple TUIs in the same firmware get distinct names and don't collide. See `test/ssh_subsystems_test.exs` for the spec-shape checks.
 
 ## System Monitor
-
-![System Monitor](assets/system_monitor.png)
 
 A btop/fastfetch-inspired BEAM system monitor with two tabs.
 
@@ -88,8 +101,7 @@ Top 20 BEAM processes by memory, with reductions and message queue length.
 
 ## LED Control
 
-Toggle the Raspberry Pi's ACT LED from a TUI. Runs in simulation mode on
-non-Nerves hosts.
+Toggle the Raspberry Pi's ACT LED from a TUI. Runs in simulation mode on non-Nerves hosts.
 
 ```
 ╭ ExRatatui + Nerves ───────╮
@@ -112,6 +124,11 @@ non-Nerves hosts.
 |---|---|
 | `space` | toggle LED |
 | `q` | Quit |
+
+## See also
+
+- **[ex_ratatui](https://github.com/mcass19/ex_ratatui)** — the underlying Elixir bindings to Rust [ratatui](https://ratatui.rs), including the [SSH transport guide](https://hexdocs.pm/ex_ratatui/ssh_transport.html).
+- **[phoenix_ex_ratatui_example](https://github.com/mcass19/phoenix_ex_ratatui_example)** — the Phoenix counterpart to this project: an admin TUI served over SSH alongside a public LiveView, sharing PubSub between the browser and the terminal. Same library, different deployment shape.
 
 ## License
 

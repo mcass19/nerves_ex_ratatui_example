@@ -156,7 +156,7 @@ defmodule LedTui do
 
   Accepts the same options as `start_link/1`.
   """
-  def run(opts) do
+  def run(opts \\ []) do
     {:ok, pid} = start_link(opts)
     ref = Process.monitor(pid)
 
