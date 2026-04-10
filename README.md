@@ -2,6 +2,8 @@
 
 Example Nerves project demonstrating [ExRatatui](https://github.com/mcass19/ex_ratatui) on embedded hardware. Includes two TUI applications that work on any machine. On a Raspberry Pi they render directly to the HDMI console **and** are reachable over SSH from any laptop on the network.
 
+![Nerves ExRatatui Demo](https://raw.githubusercontent.com/mcass19/nerves_ex_ratatui_example/main/assets/nerves_demo.gif)
+
 ## Quick start
 
 ```sh
