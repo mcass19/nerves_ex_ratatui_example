@@ -1,6 +1,6 @@
 # Nerves ExRatatui Example
 
-Example Nerves project demonstrating [ExRatatui](https://github.com/mcass19/ex_ratatui) on embedded hardware. Includes two TUI applications that work on any machine. On a Raspberry Pi they render directly to the HDMI console **and** are reachable over SSH from any laptop on the network.
+Example Nerves project demonstrating [ExRatatui](https://github.com/mcass19/ex_ratatui) on embedded hardware. Includes two TUI applications that work on any machine. On a Raspberry Pi they render directly to the HDMI console, are reachable over SSH, **and** can be attached to over Erlang distribution from any BEAM node on the network — no NIF or terminal needed on the Pi.
 
 ![Nerves ExRatatui Demo](https://raw.githubusercontent.com/mcass19/nerves_ex_ratatui_example/main/assets/nerves_demo.gif)
 
@@ -71,6 +71,58 @@ Plain `ssh nerves@nerves.local` (no `-s`) still drops you into the regular Nerve
 
 The subsystem name is the full Elixir module name as a charlist, so multiple TUIs in the same firmware get distinct names and don't collide. See `test/ssh_subsystems_test.exs` for the spec-shape checks.
 
+### Run over Erlang distribution (no NIF on the Pi)
+
+Both TUIs also have `ExRatatui.Distributed.Listener`s in the supervision tree. Any BEAM node that shares the same cookie can attach from the network — the Pi runs the TUI callbacks (mount, render, handle_event) and sends widget structs as plain BEAM terms; the connected node renders them with its own NIF. No Rust toolchain or cross-compilation needed on the device for distribution sessions.
+
+#### 1. Find the device's IP address
+
+From the IEx prompt on the Pi (via SSH or HDMI), check which interface has an address — USB gadget, Ethernet, or WiFi:
+
+```elixir
+iex> VintageNet.get(["interface", "usb0", "addresses"])
+iex> VintageNet.get(["interface", "eth0", "addresses"])
+iex> VintageNet.get(["interface", "wlan0", "addresses"])
+```
+
+Look for the `%{family: :inet, address: {a, b, c, d}}` entry. For USB gadget mode it's typically something like `172.31.216.141`.
+
+#### 2. Start EPMD and enable distribution
+
+EPMD (Erlang Port Mapper Daemon) doesn't run by default on Nerves — start it first, then make the device a distributed node:
+
+```elixir
+iex> System.cmd("epmd", ["-daemon"])
+{"", 0}
+iex> Node.start(:"nerves@172.31.216.141", :longnames)
+{:ok, _}
+```
+
+Replace the IP with the address you found in step 1.
+
+#### 3. Get the release cookie
+
+```elixir
+iex> Node.get_cookie()
+:"NKJH..."
+```
+
+Copy this value. Your node needs the same cookie to connect.
+
+#### 4. Attach from another node
+
+With `ex_ratatui` on the code path, start a node on the same subnet. For USB gadget mode the dev machine is typically one IP away (e.g. `172.31.216.142`):
+
+```sh
+iex --name dev@172.31.216.142 --cookie <cookie-from-step-3> -S mix
+iex> ExRatatui.Distributed.attach(:"nerves@172.31.216.141", SystemMonitorTui, listener: :system_monitor_dist)
+iex> ExRatatui.Distributed.attach(:"nerves@172.31.216.141", LedTui, listener: :led_tui_dist)
+```
+
+The `listener:` option tells `attach/3` which named Listener to connect to — each TUI has its own (`:system_monitor_dist` and `:led_tui_dist`). Quit with `q`.
+
+> **Why distribution?** SSH shuttles rendered ANSI bytes over the wire, so the device loads the NIF and does all the rendering. Distribution sends the raw widget structs instead — the connected node renders them locally. This means the Pi never touches the Rust NIF for distribution sessions, which is ideal for constrained devices or targets where cross-compiling the NIF is inconvenient. Both transports coexist in the same firmware.
+
 ## System Monitor
 
 A btop/fastfetch-inspired BEAM system monitor with two tabs.
@@ -129,8 +181,8 @@ Toggle the Raspberry Pi's ACT LED from a TUI. Runs in simulation mode on non-Ner
 
 ## See also
 
-- **[ex_ratatui](https://github.com/mcass19/ex_ratatui)** — the underlying Elixir bindings to Rust [ratatui](https://ratatui.rs), including the [SSH transport guide](https://hexdocs.pm/ex_ratatui/ssh_transport.html).
-- **[phoenix_ex_ratatui_example](https://github.com/mcass19/phoenix_ex_ratatui_example)** — the Phoenix counterpart to this project: an admin TUI served over SSH alongside a public LiveView, sharing PubSub between the browser and the terminal. Same library, different deployment shape.
+- **[ex_ratatui](https://github.com/mcass19/ex_ratatui)** — the underlying Elixir bindings to Rust [ratatui](https://ratatui.rs), including the [SSH transport guide](https://hexdocs.pm/ex_ratatui/ssh_transport.html) and [distribution transport guide](https://hexdocs.pm/ex_ratatui/distributed_transport.html).
+- **[phoenix_ex_ratatui_example](https://github.com/mcass19/phoenix_ex_ratatui_example)** — the Phoenix counterpart to this project: an admin TUI served over SSH and distribution alongside a public LiveView, sharing PubSub between the browser and the terminal. Same library, different deployment shape.
 
 ## License
 
