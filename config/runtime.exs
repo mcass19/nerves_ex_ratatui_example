@@ -22,6 +22,7 @@ if Application.spec(:nerves_ssh) do
     subsystems: [
       :ssh_sftpd.subsystem_spec(cwd: ~c"/"),
       ExRatatui.SSH.subsystem(SystemMonitorTui),
-      ExRatatui.SSH.subsystem(LedTui)
+      ExRatatui.SSH.subsystem(LedTui),
+      ExRatatui.SSH.subsystem(SystemMonitorReducerTui)
     ]
 end

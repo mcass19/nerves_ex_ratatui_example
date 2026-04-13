@@ -44,7 +44,7 @@ defmodule NervesExRatatuiExample.MixProject do
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
 
       # TUI
-      {:ex_ratatui, "~> 0.6.1"},
+      {:ex_ratatui, "~> 0.7"},
 
       # Dependencies for specific targets
       {:nerves_system_rpi, "~> 2.0", runtime: false, targets: :rpi},

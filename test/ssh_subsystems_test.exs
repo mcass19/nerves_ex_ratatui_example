@@ -31,11 +31,22 @@ defmodule SshSubsystemsTest do
       assert init_args[:mod] == LedTui
     end
 
-    test "the two TUIs land on different subsystem names" do
+    test "SystemMonitorReducerTui produces a valid subsystem_spec" do
+      assert {name, {ExRatatui.SSH, init_args}} =
+               ExRatatui.SSH.subsystem(SystemMonitorReducerTui)
+
+      assert is_list(name)
+      assert List.to_string(name) == "Elixir.SystemMonitorReducerTui"
+      assert init_args[:mod] == SystemMonitorReducerTui
+    end
+
+    test "all TUIs land on different subsystem names" do
       {name_a, _} = ExRatatui.SSH.subsystem(SystemMonitorTui)
       {name_b, _} = ExRatatui.SSH.subsystem(LedTui)
+      {name_c, _} = ExRatatui.SSH.subsystem(SystemMonitorReducerTui)
 
-      refute name_a == name_b
+      names = [name_a, name_b, name_c]
+      assert names == Enum.uniq(names)
     end
   end
 
@@ -51,7 +62,8 @@ defmodule SshSubsystemsTest do
       subsystems = [
         :ssh_sftpd.subsystem_spec(cwd: ~c"/"),
         ExRatatui.SSH.subsystem(SystemMonitorTui),
-        ExRatatui.SSH.subsystem(LedTui)
+        ExRatatui.SSH.subsystem(LedTui),
+        ExRatatui.SSH.subsystem(SystemMonitorReducerTui)
       ]
 
       # nerves_ssh is loaded as a transitive dep of nerves_pack — only
@@ -62,9 +74,9 @@ defmodule SshSubsystemsTest do
 
       if Code.ensure_loaded?(options_mod) do
         opts = apply(options_mod, :new, [[subsystems: subsystems]])
-        # `:ssh_sftpd` ships with OTP, our two specs come from
+        # `:ssh_sftpd` ships with OTP, our three specs come from
         # ExRatatui — none should get filtered out as malformed.
-        assert length(opts.subsystems) == 3
+        assert length(opts.subsystems) == 4
       end
 
       # Sanity-check the shape regardless of nerves_ssh availability:
@@ -76,11 +88,12 @@ defmodule SshSubsystemsTest do
       end
     end
 
-    test "all three subsystems have unique names (no collisions)" do
+    test "all subsystems have unique names (no collisions)" do
       subsystems = [
         :ssh_sftpd.subsystem_spec(cwd: ~c"/"),
         ExRatatui.SSH.subsystem(SystemMonitorTui),
-        ExRatatui.SSH.subsystem(LedTui)
+        ExRatatui.SSH.subsystem(LedTui),
+        ExRatatui.SSH.subsystem(SystemMonitorReducerTui)
       ]
 
       names = Enum.map(subsystems, &elem(&1, 0))

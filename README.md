@@ -1,6 +1,8 @@
 # Nerves ExRatatui Example
 
-Example Nerves project demonstrating [ExRatatui](https://github.com/mcass19/ex_ratatui) on embedded hardware. Includes two TUI applications that work on any machine. On a Raspberry Pi they render directly to the HDMI console, are reachable over SSH, **and** can be attached to over Erlang distribution from any BEAM node on the network — no NIF or terminal needed on the Pi.
+Example Nerves project demonstrating [ExRatatui](https://github.com/mcass19/ex_ratatui) on embedded hardware. Includes three TUI applications that work on any machine. On a Raspberry Pi they render directly to the HDMI console, are reachable over SSH, **and** can be attached to over Erlang distribution from any BEAM node on the network — no NIF or terminal needed on the Pi.
+
+Two of the apps (`SystemMonitorTui` and `LedTui`) use the **callback runtime** (`mount/1`, `handle_event/2`, `handle_info/2`). The third (`SystemMonitorReducerTui`) uses the **reducer runtime** (`init/1`, `update/2`, `subscriptions/1`) — same dashboard, different architecture.
 
 ![Nerves ExRatatui Demo](https://raw.githubusercontent.com/mcass19/nerves_ex_ratatui_example/main/assets/nerves_demo.gif)
 
@@ -13,8 +15,9 @@ mix deps.get
 ```
 
 ```sh
-mix run -e "SystemMonitorTui.run()"   # system dashboard
-mix run -e "LedTui.run()"             # LED control (simulation on non-Nerves)
+mix run -e "SystemMonitorTui.run()"           # system dashboard (callback runtime)
+mix run -e "SystemMonitorReducerTui.run()"    # system dashboard (reducer runtime)
+mix run -e "LedTui.run()"                     # LED control (simulation on non-Nerves)
 ```
 
 Press `q` to quit either TUI.
@@ -49,15 +52,17 @@ Connect HDMI + USB keyboard, power on, and at the IEx prompt:
 
 ```elixir
 iex> SystemMonitorTui.run()
+iex> SystemMonitorReducerTui.run()
 iex> LedTui.run()
 ```
 
 ### Run over SSH (no display required)
 
-Both TUIs are also registered as SSH subsystems via the `nerves_ssh` daemon that ships with `nerves_pack`. From any machine whose public key is in your `~/.ssh/`:
+All three TUIs are registered as SSH subsystems via the `nerves_ssh` daemon that ships with `nerves_pack`. From any machine whose public key is in your `~/.ssh/`:
 
 ```sh
 ssh -t nerves@nerves.local -s Elixir.SystemMonitorTui
+ssh -t nerves@nerves.local -s Elixir.SystemMonitorReducerTui
 ssh -t nerves@nerves.local -s Elixir.LedTui
 ```
 
@@ -73,7 +78,7 @@ The subsystem name is the full Elixir module name as a charlist, so multiple TUI
 
 ### Run over Erlang distribution (no NIF on the Pi)
 
-Both TUIs also have `ExRatatui.Distributed.Listener`s in the supervision tree. Any BEAM node that shares the same cookie can attach from the network — the Pi runs the TUI callbacks (mount, render, handle_event) and sends widget structs as plain BEAM terms; the connected node renders them with its own NIF. No Rust toolchain or cross-compilation needed on the device for distribution sessions.
+All three TUIs have `ExRatatui.Distributed.Listener`s in the supervision tree. Any BEAM node that shares the same cookie can attach from the network — the Pi runs the TUI callbacks and sends widget structs as plain BEAM terms; the connected node renders them with its own NIF. No Rust toolchain or cross-compilation needed on the device for distribution sessions.
 
 #### 1. Find the device's IP address
 
@@ -116,10 +121,11 @@ With `ex_ratatui` on the code path, start a node on the same subnet. For USB gad
 ```sh
 iex --name dev@172.31.216.142 --cookie <cookie-from-step-3> -S mix
 iex> ExRatatui.Distributed.attach(:"nerves@172.31.216.141", SystemMonitorTui, listener: :system_monitor_dist)
+iex> ExRatatui.Distributed.attach(:"nerves@172.31.216.141", SystemMonitorReducerTui, listener: :system_monitor_reducer_dist)
 iex> ExRatatui.Distributed.attach(:"nerves@172.31.216.141", LedTui, listener: :led_tui_dist)
 ```
 
-The `listener:` option tells `attach/3` which named Listener to connect to — each TUI has its own (`:system_monitor_dist` and `:led_tui_dist`). Quit with `q`.
+The `listener:` option tells `attach/3` which named Listener to connect to — each TUI has its own (`:system_monitor_dist`, `:system_monitor_reducer_dist`, and `:led_tui_dist`). Quit with `q`.
 
 > **Why distribution?** SSH shuttles rendered ANSI bytes over the wire, so the device loads the NIF and does all the rendering. Distribution sends the raw widget structs instead — the connected node renders them locally. This means the Pi never touches the Rust NIF for distribution sessions, which is ideal for constrained devices or targets where cross-compiling the NIF is inconvenient. Both transports coexist in the same firmware.
 
@@ -152,6 +158,34 @@ Top 20 BEAM processes by memory, with reductions and message queue length.
 | `j` / `Down` | Scroll down in process table |
 | `k` / `Up` | Scroll up in process table |
 | `q` | Quit |
+
+## System Monitor — Reducer Runtime
+
+`SystemMonitorReducerTui` is the same system dashboard rebuilt with ExRatatui's **reducer runtime**. Instead of separate `handle_event/2` and `handle_info/2` callbacks, all messages flow through a single `update/2`:
+
+```elixir
+use ExRatatui.App, runtime: :reducer
+
+def update({:event, %Event.Key{code: "q", kind: "press"}}, state), do: {:stop, state}
+def update({:info, :refresh}, state) do
+  cmd = Command.async(fn -> collect_metrics(state) end, &{:metrics_collected, &1})
+  {:noreply, state, commands: [cmd], render?: false}
+end
+def update({:info, {:metrics_collected, metrics}}, state) do
+  {:noreply, %{state | metrics: metrics}}
+end
+```
+
+Key differences from the callback version:
+
+| Feature | Callback (`SystemMonitorTui`) | Reducer (`SystemMonitorReducerTui`) |
+|---|---|---|
+| **Timer** | `Process.send_after/3` in `handle_info/2` | `Subscription.interval/3` in `subscriptions/1` — auto-reconciled |
+| **Message handling** | Split across `handle_event/2` + `handle_info/2` | Single `update/2` with `{:event, _}` and `{:info, _}` |
+| **Async work** | N/A (blocks in `handle_info`) | `Command.async/2` — `/proc` reads run off the server process |
+| **Render control** | Always re-renders | `render?: false` skips render on async kick-off |
+
+Both versions produce identical output, work on all three transports, and use the same controls.
 
 ## LED Control
 
