@@ -1,8 +1,8 @@
 # Nerves ExRatatui Example
 
-Example Nerves project demonstrating [ExRatatui](https://github.com/mcass19/ex_ratatui) on embedded hardware. Includes three TUI applications that work on any machine. On a Raspberry Pi they render directly to the HDMI console, are reachable over SSH, **and** can be attached to over Erlang distribution from any BEAM node on the network — no NIF or terminal needed on the Pi.
+Example Nerves project demonstrating [ExRatatui](https://github.com/mcass19/ex_ratatui) v0.8 on embedded hardware. Ships two TUI applications — a BEAM system monitor and an LED controller — that work on any machine. On a Raspberry Pi they render directly to the HDMI console, are reachable over SSH, **and** can be attached to over Erlang distribution from any BEAM node on the network — no NIF or terminal needed on the Pi.
 
-Two of the apps (`SystemMonitorTui` and `LedTui`) use the **callback runtime** (`mount/1`, `handle_event/2`, `handle_info/2`). The third (`SystemMonitorReducerTui`) uses the **reducer runtime** (`init/1`, `update/2`, `subscriptions/1`) — same dashboard, different architecture.
+Both apps are built on ExRatatui's **reducer runtime** (`init/1`, `update/2`, `subscriptions/1`) and showcase the v0.8 widget set: `Canvas`, `LineGauge`, `BarChart`, `Chart`, `Sparkline`, `Table`, `Tabs`, and rich-text primitives (`Line`/`Span`).
 
 ![Nerves ExRatatui Demo](https://raw.githubusercontent.com/mcass19/nerves_ex_ratatui_example/main/assets/nerves_demo.gif)
 
@@ -15,9 +15,8 @@ mix deps.get
 ```
 
 ```sh
-mix run -e "SystemMonitorTui.run()"           # system dashboard (callback runtime)
-mix run -e "SystemMonitorReducerTui.run()"    # system dashboard (reducer runtime)
-mix run -e "LedTui.run()"                     # LED control (simulation on non-Nerves)
+mix run -e "SystemMonitorTui.run()"   # BEAM + host system dashboard
+mix run -e "LedTui.run()"             # LED control (simulation on non-Nerves)
 ```
 
 Press `q` to quit either TUI.
@@ -52,17 +51,15 @@ Connect HDMI + USB keyboard, power on, and at the IEx prompt:
 
 ```elixir
 iex> SystemMonitorTui.run()
-iex> SystemMonitorReducerTui.run()
 iex> LedTui.run()
 ```
 
 ### Run over SSH (no display required)
 
-All three TUIs are registered as SSH subsystems via the `nerves_ssh` daemon that ships with `nerves_pack`. From any machine whose public key is in your `~/.ssh/`:
+Both TUIs are registered as SSH subsystems via the `nerves_ssh` daemon that ships with `nerves_pack`. From any machine whose public key is in your `~/.ssh/`:
 
 ```sh
 ssh -t nerves@nerves.local -s Elixir.SystemMonitorTui
-ssh -t nerves@nerves.local -s Elixir.SystemMonitorReducerTui
 ssh -t nerves@nerves.local -s Elixir.LedTui
 ```
 
@@ -78,7 +75,7 @@ The subsystem name is the full Elixir module name as a charlist, so multiple TUI
 
 ### Run over Erlang distribution (no NIF on the Pi)
 
-All three TUIs have `ExRatatui.Distributed.Listener`s in the supervision tree. Any BEAM node that shares the same cookie can attach from the network — the Pi runs the TUI callbacks and sends widget structs as plain BEAM terms; the connected node renders them with its own NIF. No Rust toolchain or cross-compilation needed on the device for distribution sessions.
+Both TUIs have `ExRatatui.Distributed.Listener`s in the supervision tree. Any BEAM node that shares the same cookie can attach from the network — the Pi runs the TUI callbacks and sends widget structs as plain BEAM terms; the connected node renders them with its own NIF. No Rust toolchain or cross-compilation needed on the device for distribution sessions.
 
 #### 1. Find the device's IP address
 
@@ -121,96 +118,72 @@ With `ex_ratatui` on the code path, start a node on the same subnet. For USB gad
 ```sh
 iex --name dev@172.31.216.142 --cookie <cookie-from-step-3> -S mix
 iex> ExRatatui.Distributed.attach(:"nerves@172.31.216.141", SystemMonitorTui, listener: :system_monitor_dist)
-iex> ExRatatui.Distributed.attach(:"nerves@172.31.216.141", SystemMonitorReducerTui, listener: :system_monitor_reducer_dist)
 iex> ExRatatui.Distributed.attach(:"nerves@172.31.216.141", LedTui, listener: :led_tui_dist)
 ```
 
-The `listener:` option tells `attach/3` which named Listener to connect to — each TUI has its own (`:system_monitor_dist`, `:system_monitor_reducer_dist`, and `:led_tui_dist`). Quit with `q`.
+The `listener:` option tells `attach/3` which named Listener to connect to — each TUI has its own (`:system_monitor_dist`, `:led_tui_dist`). Quit with `q`.
 
 > **Why distribution?** SSH shuttles rendered ANSI bytes over the wire, so the device loads the NIF and does all the rendering. Distribution sends the raw widget structs instead — the connected node renders them locally. This means the Pi never touches the Rust NIF for distribution sessions, which is ideal for constrained devices or targets where cross-compiling the NIF is inconvenient. Both transports coexist in the same firmware.
 
 ## System Monitor
 
-A btop/fastfetch-inspired BEAM system monitor with two tabs.
+A btop/fastfetch-inspired BEAM system monitor with a three-tab dashboard, refreshed once per second. The heavy `/proc` reads run off the server process via `Command.async/2` so the UI never blocks.
 
-### Overview
+### Tabs
 
-Six-panel dashboard updating in real time:
-
-| Panel | What it shows |
+| Tab | What it shows |
 |---|---|
-| **Host Info** | OS, kernel, CPU model + cores, architecture, system uptime, primary IP |
-| **System Info** | OTP/ERTS/Elixir versions, schedulers, process/port/atom counts, BEAM uptime |
-| **Memory** | RAM + Swap bars, cached/free breakdown — colors shift green/yellow/red |
-| **CPU & Disk** | Load averages (1/5/15 min), CPU temperature, disk usage |
-| **Memory Pools** | BEAM memory: processes, binary, ETS, atom, code |
-| **Scheduler Utilization** | Per-scheduler wall-time usage with live progress bars |
+| **1 · Overview** | Host info (OS, kernel, CPU, uptime, IP) · BEAM info (OTP/ERTS/Elixir, schedulers, processes/ports/atoms, BEAM uptime) · RAM & BEAM heap as `LineGauge`s · BEAM memory pools (`BarChart`) · Per-scheduler utilization (`BarChart`) |
+| **2 · Processes** | Top 20 processes by memory in a `Table` — memory, reductions, message queue length; scrollable with `j`/`k` |
+| **3 · Graphs** | Rolling 60-second time series: RAM % (`Chart` line), load average 1m/5m/15m (`Chart` with three datasets), average scheduler utilization (`Sparkline`) |
 
-### Processes
+### Reducer runtime
 
-Top 20 BEAM processes by memory, with reductions and message queue length.
-
-### Controls
-
-| Key | Action |
-|---|---|
-| `1` / `2` | Switch tabs (Overview / Processes) |
-| `j` / `Down` | Scroll down in process table |
-| `k` / `Up` | Scroll up in process table |
-| `q` | Quit |
-
-## System Monitor — Reducer Runtime
-
-`SystemMonitorReducerTui` is the same system dashboard rebuilt with ExRatatui's **reducer runtime**. Instead of separate `handle_event/2` and `handle_info/2` callbacks, all messages flow through a single `update/2`:
+The monitor uses ExRatatui's reducer runtime. All messages flow through a single `update/2`:
 
 ```elixir
 use ExRatatui.App, runtime: :reducer
 
 def update({:event, %Event.Key{code: "q", kind: "press"}}, state), do: {:stop, state}
+
 def update({:info, :refresh}, state) do
-  cmd = Command.async(fn -> collect_metrics(state) end, &{:metrics_collected, &1})
+  cmd = Command.async(
+    fn -> collect_metrics(state.prev_sched_sample) end,
+    fn metrics -> {:metrics_collected, metrics} end
+  )
+
   {:noreply, state, commands: [cmd], render?: false}
 end
+
 def update({:info, {:metrics_collected, metrics}}, state) do
   {:noreply, %{state | metrics: metrics}}
 end
+
+def subscriptions(_state), do: [Subscription.interval(:refresh, 1_000, :refresh)]
 ```
 
-Key differences from the callback version:
-
-| Feature | Callback (`SystemMonitorTui`) | Reducer (`SystemMonitorReducerTui`) |
-|---|---|---|
-| **Timer** | `Process.send_after/3` in `handle_info/2` | `Subscription.interval/3` in `subscriptions/1` — auto-reconciled |
-| **Message handling** | Split across `handle_event/2` + `handle_info/2` | Single `update/2` with `{:event, _}` and `{:info, _}` |
-| **Async work** | N/A (blocks in `handle_info`) | `Command.async/2` — `/proc` reads run off the server process |
-| **Render control** | Always re-renders | `render?: false` skips render on async kick-off |
-
-Both versions produce identical output, work on all three transports, and use the same controls.
-
-## LED Control
-
-Toggle the Raspberry Pi's ACT LED from a TUI. Runs in simulation mode on non-Nerves hosts.
-
-```
-╭ ExRatatui + Nerves ───────╮
-│  Nerves LED Control       │
-╰───────────────────────────╯
-╭───────────────────────────╮
-│                           │
-│   ACT LED:  [ ON ]        │
-│                           │
-│       ( * )               │
-│                           │
-╰───────────────────────────╯
-─────────────────────────────
- space: toggle LED | q: quit
-```
+The periodic refresh is declared via `subscriptions/1` and reconciled by the runtime — no manual `Process.send_after/3`. The async command kicks off metric collection off the server process so renders stay snappy.
 
 ### Controls
 
 | Key | Action |
 |---|---|
-| `space` | toggle LED |
+| `1` / `2` / `3` | Switch tabs (Overview / Processes / Graphs) |
+| `j` / `Down` | Scroll down in process table |
+| `k` / `Up` | Scroll up in process table |
+| `q` | Quit |
+
+## LED Control
+
+Toggle the Raspberry Pi's onboard green ACT LED from a TUI. No external wiring needed. When the LED sysfs path is not available (laptop, CI), the TUI runs in simulation mode where everything works identically but no hardware is toggled.
+
+The body is an `ExRatatui.Widgets.Canvas` that draws a torch: when the LED is off the torch is rendered in muted grays; when it's on, a yellow light beam is projected from the bulb, filled with scattered `Points` for a "sparkle" effect.
+
+### Controls
+
+| Key | Action |
+|---|---|
+| `space` | Toggle LED |
 | `q` | Quit |
 
 ## See also
