@@ -126,6 +126,43 @@ defmodule LedTuiTest do
         assert %ExRatatui.Layout.Rect{} = rect
       end
     end
+
+    test "renders the LED-on path (torch emitting + sparkles)" do
+      {:ok, state} = LedTui.mount([])
+      state = %{state | led_on: true, toggles: 7}
+      frame = %ExRatatui.Frame{width: 60, height: 20}
+
+      widgets = LedTui.render(state, frame)
+
+      assert length(widgets) == 3
+    end
+
+    test "renders the HARDWARE header path" do
+      {:ok, state} = LedTui.mount([])
+      state = %{state | hardware: true, led_on: true}
+      frame = %ExRatatui.Frame{width: 60, height: 20}
+
+      widgets = LedTui.render(state, frame)
+
+      assert length(widgets) == 3
+    end
+  end
+
+  describe "integration: test terminal (LED on)" do
+    test "renders ON badge and torch emitting state" do
+      pid = start_tui()
+
+      # Flip LED on via space, then peek at buffer content.
+      :ok = ExRatatui.Runtime.inject_event(pid, %Event.Key{code: " ", kind: "press"})
+      _ = :sys.get_state(pid)
+      content = get_buffer(pid)
+
+      assert content =~ "ON"
+      assert content =~ "emitting"
+      assert content =~ "toggles:"
+
+      stop_tui(pid)
+    end
   end
 
   describe "integration: test terminal" do
@@ -134,9 +171,10 @@ defmodule LedTuiTest do
       content = get_buffer(pid)
 
       assert content =~ "Nerves LED Control"
-      assert content =~ "simulation"
+      assert content =~ "SIMULATION"
       assert content =~ "OFF"
-      assert content =~ "space: toggle LED"
+      assert content =~ "toggle LED"
+      assert content =~ "quit"
 
       stop_tui(pid)
     end
@@ -152,7 +190,8 @@ defmodule LedTuiTest do
       content = get_buffer(pid)
 
       assert content =~ "Nerves LED Control"
-      refute content =~ "simulation"
+      assert content =~ "HARDWARE"
+      refute content =~ "SIMULATION"
 
       stop_tui(pid)
     end

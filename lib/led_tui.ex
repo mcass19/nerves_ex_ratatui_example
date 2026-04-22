@@ -6,6 +6,11 @@ defmodule LedTui do
   When the LED sysfs path is not available (laptop, CI), it runs in simulation
   mode where the TUI works identically but no hardware is toggled.
 
+  The body is a `ExRatatui.Widgets.Canvas` that draws a torch: when the LED
+  is off the torch is rendered in muted grays; when it's on a yellow light
+  beam is projected from the bulb, filled with scattered `Points` for a
+  "sparkle" effect.
+
   ## Running (simulation mode)
 
       cd nerves_ex_ratatui_example
@@ -20,28 +25,32 @@ defmodule LedTui do
 
   use ExRatatui.App
 
-  require Logger
-
   alias ExRatatui.Event
   alias ExRatatui.Layout
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Style
-  alias ExRatatui.Widgets.{Block, Paragraph}
+  alias ExRatatui.Text.{Line, Span}
+  alias ExRatatui.Widgets.{Block, Canvas, Paragraph}
+  alias ExRatatui.Widgets.Canvas.{Circle, Label, Points, Rectangle}
+  alias ExRatatui.Widgets.Canvas.Line, as: CanvasLine
 
   @default_led_path "/sys/class/leds/ACT"
+  @canvas_x_bounds {0.0, 100.0}
+  @canvas_y_bounds {0.0, 50.0}
 
   @impl true
   def mount(opts) do
     led_path = Keyword.get(opts, :led_path, @default_led_path)
     hardware? = setup_led(led_path)
 
-    if hardware? do
-      Logger.info("LED at #{led_path} — controlling onboard ACT LED")
-    else
-      Logger.info("LED sysfs not found — running in simulation mode")
-    end
+    state = %{
+      led_on: false,
+      hardware: hardware?,
+      led_path: led_path,
+      toggles: 0
+    }
 
-    {:ok, %{led_on: false, hardware: hardware?, led_path: led_path}}
+    {:ok, state}
   end
 
   @impl true
@@ -52,7 +61,10 @@ defmodule LedTui do
   def handle_event(%Event.Key{code: " ", kind: "press"}, state) do
     led_on = not state.led_on
     write_led(state, led_on)
-    {:noreply, %{state | led_on: led_on}}
+
+    new_state = %{state | led_on: led_on, toggles: state.toggles + 1}
+
+    {:noreply, new_state}
   end
 
   def handle_event(_event, state) do
@@ -69,11 +81,15 @@ defmodule LedTui do
     area = %Rect{x: 0, y: 0, width: frame.width, height: frame.height}
 
     [header_area, body_area, footer_area] =
-      Layout.split(area, :vertical, [{:length, 3}, {:min, 0}, {:length, 3}])
+      Layout.split(area, :vertical, [
+        {:length, 3},
+        {:min, 0},
+        {:length, 3}
+      ])
 
     [
       {header_widget(state), header_area},
-      {body_widget(state), body_area},
+      {torch_canvas(state), body_area},
       {footer_widget(), footer_area}
     ]
   end
@@ -81,13 +97,56 @@ defmodule LedTui do
   # -- Widgets --
 
   defp header_widget(state) do
-    mode = if state.hardware, do: "", else: " (simulation)"
+    mode_suffix =
+      if state.hardware do
+        [
+          Span.new("  "),
+          Span.new(" HARDWARE ",
+            style: %Style{bg: :magenta, fg: :white, modifiers: [:bold]}
+          )
+        ]
+      else
+        [
+          Span.new("  "),
+          Span.new(" SIMULATION ",
+            style: %Style{bg: :dark_gray, fg: :white, modifiers: [:bold]}
+          )
+        ]
+      end
+
+    status_badge =
+      if state.led_on do
+        Span.new(" ON  ", style: %Style{bg: :green, fg: :black, modifiers: [:bold]})
+      else
+        Span.new(" OFF ", style: %Style{bg: :red, fg: :white, modifiers: [:bold]})
+      end
+
+    title =
+      Line.new(
+        [
+          Span.new(" "),
+          Span.new("Nerves LED Control", style: %Style{fg: :cyan, modifiers: [:bold]}),
+          Span.new("   "),
+          status_badge,
+          Span.new("  "),
+          Span.new("toggles: ", style: %Style{fg: :dark_gray}),
+          Span.new(Integer.to_string(state.toggles),
+            style: %Style{fg: :yellow, modifiers: [:bold]}
+          )
+        ] ++ mode_suffix
+      )
 
     %Paragraph{
-      text: "  Nerves LED Control#{mode}",
-      style: %Style{fg: :cyan, modifiers: [:bold]},
+      text: title,
       block: %Block{
-        title: " ExRatatui + Nerves ",
+        title:
+          Line.new([
+            Span.new(" "),
+            Span.new("ExRatatui", style: %Style{fg: :magenta, modifiers: [:bold]}),
+            Span.new(" + ", style: %Style{fg: :dark_gray}),
+            Span.new("Nerves", style: %Style{fg: :blue, modifiers: [:bold]}),
+            Span.new(" ")
+          ]),
         borders: [:all],
         border_type: :rounded,
         border_style: %Style{fg: :cyan}
@@ -95,35 +154,106 @@ defmodule LedTui do
     }
   end
 
-  defp body_widget(state) do
-    {status, status_color} =
-      if state.led_on, do: {"ON", :green}, else: {"OFF", :red}
+  defp torch_canvas(state) do
+    title =
+      if state.led_on do
+        Line.new([
+          Span.new(" "),
+          Span.new("Torch", style: %Style{fg: :yellow, modifiers: [:bold]}),
+          Span.new(" — emitting", style: %Style{fg: :yellow}),
+          Span.new(" ")
+        ])
+      else
+        Line.new([
+          Span.new(" "),
+          Span.new("Torch", style: %Style{fg: :white, modifiers: [:bold]}),
+          Span.new(" — idle", style: %Style{fg: :dark_gray}),
+          Span.new(" ")
+        ])
+      end
 
-    indicator =
-      if state.led_on, do: "( * )", else: "(   )"
+    border_color = if state.led_on, do: :yellow, else: :dark_gray
 
-    text = """
-      ACT LED:  [ #{status} ]
-
-          #{indicator}
-    """
-
-    %Paragraph{
-      text: text,
-      style: %Style{fg: status_color, modifiers: [:bold]},
-      alignment: :center,
+    %Canvas{
+      x_bounds: @canvas_x_bounds,
+      y_bounds: @canvas_y_bounds,
+      marker: :braille,
+      shapes: torch_shapes(state.led_on),
       block: %Block{
+        title: title,
         borders: [:all],
         border_type: :rounded,
-        border_style: %Style{fg: :dark_gray}
+        border_style: %Style{fg: border_color}
       }
     }
   end
 
+  # The torch is drawn as a rectangle body, a circular reflector/head,
+  # a small switch bump on top and a circular bulb. When the LED is on
+  # we overlay a beam (three Lines fanning from the bulb), scattered
+  # sparkle Points filling the cone, and a label calling out the beam.
+  defp torch_shapes(false) do
+    body_color = :dark_gray
+
+    [
+      %Rectangle{x: 10.0, y: 18.0, width: 32.0, height: 10.0, color: body_color},
+      %Rectangle{x: 42.0, y: 15.0, width: 8.0, height: 16.0, color: body_color},
+      %Rectangle{x: 14.0, y: 28.0, width: 4.0, height: 2.0, color: body_color},
+      %Circle{x: 48.0, y: 23.0, radius: 2.5, color: body_color},
+      %Label{x: 22.0, y: 10.0, text: "press space to light", color: :dark_gray}
+    ]
+  end
+
+  defp torch_shapes(true) do
+    body_color = :yellow
+    beam_color = :yellow
+
+    [
+      %Rectangle{x: 10.0, y: 18.0, width: 32.0, height: 10.0, color: body_color},
+      %Rectangle{x: 42.0, y: 15.0, width: 8.0, height: 16.0, color: body_color},
+      %Rectangle{x: 14.0, y: 28.0, width: 4.0, height: 2.0, color: :green},
+      %Circle{x: 48.0, y: 23.0, radius: 2.5, color: :white},
+      # Beam cone: top, middle, bottom lines fanning from the bulb
+      %CanvasLine{x1: 50.5, y1: 23.0, x2: 95.0, y2: 42.0, color: beam_color},
+      %CanvasLine{x1: 50.5, y1: 23.0, x2: 98.0, y2: 23.0, color: :white},
+      %CanvasLine{x1: 50.5, y1: 23.0, x2: 95.0, y2: 4.0, color: beam_color},
+      # Scattered sparkle points inside the cone for a "bright" feel
+      %Points{coords: beam_sparkles(), color: :yellow},
+      %Points{coords: beam_core_sparkles(), color: :white},
+      %Label{x: 74.0, y: 36.0, text: "light", color: :yellow}
+    ]
+  end
+
+  # Procedurally scatter points inside the beam cone. Static coordinates
+  # are used (no rng) so the drawing stays deterministic frame-to-frame.
+  defp beam_sparkles do
+    for x <- 55..95//3, y_off <- -18..18//3 do
+      ratio = (x - 55) / 40.0
+      max_y = ratio * 18.0
+      y = y_off * 1.0
+
+      if abs(y) <= max_y do
+        {x * 1.0, 23.0 + y}
+      end
+    end
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp beam_core_sparkles do
+    for x <- 55..95//2 do
+      {x * 1.0, 23.0}
+    end
+  end
+
   defp footer_widget do
     %Paragraph{
-      text: " space: toggle LED  |  q: quit",
-      style: %Style{fg: :dark_gray},
+      text:
+        Line.new([
+          Span.new(" space ", style: %Style{bg: :cyan, fg: :black, modifiers: [:bold]}),
+          Span.new(" toggle LED  "),
+          Span.new(" q ", style: %Style{bg: :red, fg: :white, modifiers: [:bold]}),
+          Span.new(" quit")
+        ]),
       block: %Block{
         borders: [:top],
         border_style: %Style{fg: :dark_gray}
