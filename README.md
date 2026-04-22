@@ -1,8 +1,6 @@
 # Nerves ExRatatui Example
 
-Example Nerves project demonstrating [ExRatatui](https://github.com/mcass19/ex_ratatui) v0.8 on embedded hardware. Ships two TUI applications — a BEAM system monitor and an LED controller — that work on any machine. On a Raspberry Pi they render directly to the HDMI console, are reachable over SSH, **and** can be attached to over Erlang distribution from any BEAM node on the network — no NIF or terminal needed on the Pi.
-
-Both apps are built on ExRatatui's **reducer runtime** (`init/1`, `update/2`, `subscriptions/1`) and showcase the v0.8 widget set: `Canvas`, `LineGauge`, `BarChart`, `Chart`, `Sparkline`, `Table`, `Tabs`, and rich-text primitives (`Line`/`Span`).
+Example Nerves project demonstrating [ExRatatui](https://github.com/mcass19/ex_ratatui) on embedded hardware. Ships two TUI applications — a BEAM system monitor and an LED controller — that work on any machine. On a Raspberry Pi they render directly to the HDMI console, are reachable over SSH, and can be attached to over Erlang distribution from any BEAM node on the network with no NIF or terminal needed on the Pi.
 
 ## Quick start
 
@@ -18,6 +16,48 @@ mix run -e "LedTui.run()"             # LED control (simulation on non-Nerves)
 ```
 
 Press `q` to quit either TUI.
+
+## System Monitor
+
+![System Monitor TUI running on a Raspberry Pi over SSH](https://raw.githubusercontent.com/mcass19/nerves_ex_ratatui_example/main/assets/system_monitor_tui.gif)
+
+A btop/fastfetch-inspired BEAM system monitor with a three-tab dashboard, refreshed once per second. The heavy `/proc` reads run off the server process via `Command.async/2` so the UI never blocks.
+
+### Tabs
+
+| Tab | What it shows |
+|---|---|
+| **1 · Overview** | Host info (OS, kernel, CPU, uptime, IP) · BEAM info (OTP/ERTS/Elixir, schedulers, processes/ports/atoms, BEAM uptime) · RAM & BEAM heap as `LineGauge`s · BEAM memory pools (`BarChart`) · Per-scheduler utilization (`BarChart`) |
+| **2 · Processes** | Top 20 processes by memory in a `Table` — memory, reductions, message queue length; scrollable with `j`/`k` |
+| **3 · Graphs** | Rolling 60-second time series: RAM % (`Chart` line), load average 1m/5m/15m (`Chart` with three datasets), average scheduler utilization (`Sparkline`) |
+
+### Reducer runtime
+
+Built on ExRatatui's reducer runtime: the per-second refresh is a declarative `subscriptions/1` tick and metric collection runs as an async command so renders stay snappy. See the [reducer runtime guide](https://hexdocs.pm/ex_ratatui/reducer_runtime.html).
+
+### Controls
+
+| Key | Action |
+|---|---|
+| `1` / `2` / `3` | Switch tabs (Overview / Processes / Graphs) |
+| `j` / `Down` | Scroll down in process table |
+| `k` / `Up` | Scroll up in process table |
+| `q` | Quit |
+
+## LED Control
+
+![LED control TUI toggling the Pi onboard ACT LED](https://raw.githubusercontent.com/mcass19/nerves_ex_ratatui_example/main/assets/led_tui.gif)
+
+Toggle the Raspberry Pi's onboard green ACT LED from a TUI. No external wiring needed. When the LED sysfs path is not available (laptop, CI), the TUI runs in simulation mode where everything works identically but no hardware is toggled.
+
+The body is an `ExRatatui.Widgets.Canvas` that draws a torch: when the LED is off the torch is rendered in muted grays; when it's on, a yellow light beam is projected from the bulb, filled with scattered `Points` for a "sparkle" effect.
+
+### Controls
+
+| Key | Action |
+|---|---|
+| `space` | Toggle LED |
+| `q` | Quit |
 
 ## Deploy to a Raspberry Pi
 
@@ -122,71 +162,6 @@ iex> ExRatatui.Distributed.attach(:"nerves@172.31.216.141", LedTui, listener: :l
 The `listener:` option tells `attach/3` which named Listener to connect to — each TUI has its own (`:system_monitor_dist`, `:led_tui_dist`). Quit with `q`.
 
 > **Why distribution?** SSH shuttles rendered ANSI bytes over the wire, so the device loads the NIF and does all the rendering. Distribution sends the raw widget structs instead — the connected node renders them locally. This means the Pi never touches the Rust NIF for distribution sessions, which is ideal for constrained devices or targets where cross-compiling the NIF is inconvenient. Both transports coexist in the same firmware.
-
-## System Monitor
-
-![System Monitor TUI running on a Raspberry Pi over SSH](https://raw.githubusercontent.com/mcass19/nerves_ex_ratatui_example/main/assets/system_monitor_tui.gif)
-
-A btop/fastfetch-inspired BEAM system monitor with a three-tab dashboard, refreshed once per second. The heavy `/proc` reads run off the server process via `Command.async/2` so the UI never blocks.
-
-### Tabs
-
-| Tab | What it shows |
-|---|---|
-| **1 · Overview** | Host info (OS, kernel, CPU, uptime, IP) · BEAM info (OTP/ERTS/Elixir, schedulers, processes/ports/atoms, BEAM uptime) · RAM & BEAM heap as `LineGauge`s · BEAM memory pools (`BarChart`) · Per-scheduler utilization (`BarChart`) |
-| **2 · Processes** | Top 20 processes by memory in a `Table` — memory, reductions, message queue length; scrollable with `j`/`k` |
-| **3 · Graphs** | Rolling 60-second time series: RAM % (`Chart` line), load average 1m/5m/15m (`Chart` with three datasets), average scheduler utilization (`Sparkline`) |
-
-### Reducer runtime
-
-The monitor uses ExRatatui's reducer runtime. All messages flow through a single `update/2`:
-
-```elixir
-use ExRatatui.App, runtime: :reducer
-
-def update({:event, %Event.Key{code: "q", kind: "press"}}, state), do: {:stop, state}
-
-def update({:info, :refresh}, state) do
-  cmd = Command.async(
-    fn -> collect_metrics(state.prev_sched_sample) end,
-    fn metrics -> {:metrics_collected, metrics} end
-  )
-
-  {:noreply, state, commands: [cmd], render?: false}
-end
-
-def update({:info, {:metrics_collected, metrics}}, state) do
-  {:noreply, %{state | metrics: metrics}}
-end
-
-def subscriptions(_state), do: [Subscription.interval(:refresh, 1_000, :refresh)]
-```
-
-The periodic refresh is declared via `subscriptions/1` and reconciled by the runtime — no manual `Process.send_after/3`. The async command kicks off metric collection off the server process so renders stay snappy.
-
-### Controls
-
-| Key | Action |
-|---|---|
-| `1` / `2` / `3` | Switch tabs (Overview / Processes / Graphs) |
-| `j` / `Down` | Scroll down in process table |
-| `k` / `Up` | Scroll up in process table |
-| `q` | Quit |
-
-## LED Control
-
-![LED control TUI toggling the Pi onboard ACT LED](https://raw.githubusercontent.com/mcass19/nerves_ex_ratatui_example/main/assets/led_tui.gif)
-
-Toggle the Raspberry Pi's onboard green ACT LED from a TUI. No external wiring needed. When the LED sysfs path is not available (laptop, CI), the TUI runs in simulation mode where everything works identically but no hardware is toggled.
-
-The body is an `ExRatatui.Widgets.Canvas` that draws a torch: when the LED is off the torch is rendered in muted grays; when it's on, a yellow light beam is projected from the bulb, filled with scattered `Points` for a "sparkle" effect.
-
-### Controls
-
-| Key | Action |
-|---|---|
-| `space` | Toggle LED |
-| `q` | Quit |
 
 ## See also
 
