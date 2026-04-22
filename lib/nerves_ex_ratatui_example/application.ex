@@ -32,9 +32,8 @@ defmodule NervesExRatatuiExample.Application do
           id: :led_tui_dist
         ),
         Supervisor.child_spec(
-          {ExRatatui.Distributed.Listener,
-           mod: SystemMonitorReducerTui, name: :system_monitor_reducer_dist},
-          id: :system_monitor_reducer_dist
+          {ExRatatui.Distributed.Listener, mod: SystemMonitorTui, name: :system_monitor_dist},
+          id: :system_monitor_dist
         )
       ]
     end

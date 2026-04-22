@@ -22,18 +22,18 @@ defmodule SshSubsystemsTest do
       assert init_args[:mod] == LedTui
     end
 
-    test "SystemMonitorReducerTui produces a valid subsystem_spec" do
+    test "SystemMonitorTui produces a valid subsystem_spec" do
       assert {name, {ExRatatui.SSH, init_args}} =
-               ExRatatui.SSH.subsystem(SystemMonitorReducerTui)
+               ExRatatui.SSH.subsystem(SystemMonitorTui)
 
       assert is_list(name)
-      assert List.to_string(name) == "Elixir.SystemMonitorReducerTui"
-      assert init_args[:mod] == SystemMonitorReducerTui
+      assert List.to_string(name) == "Elixir.SystemMonitorTui"
+      assert init_args[:mod] == SystemMonitorTui
     end
 
     test "all TUIs land on different subsystem names" do
       {name_a, _} = ExRatatui.SSH.subsystem(LedTui)
-      {name_b, _} = ExRatatui.SSH.subsystem(SystemMonitorReducerTui)
+      {name_b, _} = ExRatatui.SSH.subsystem(SystemMonitorTui)
 
       names = [name_a, name_b]
       assert names == Enum.uniq(names)
@@ -52,7 +52,7 @@ defmodule SshSubsystemsTest do
       subsystems = [
         :ssh_sftpd.subsystem_spec(cwd: ~c"/"),
         ExRatatui.SSH.subsystem(LedTui),
-        ExRatatui.SSH.subsystem(SystemMonitorReducerTui)
+        ExRatatui.SSH.subsystem(SystemMonitorTui)
       ]
 
       # nerves_ssh is loaded as a transitive dep of nerves_pack — only
@@ -81,7 +81,7 @@ defmodule SshSubsystemsTest do
       subsystems = [
         :ssh_sftpd.subsystem_spec(cwd: ~c"/"),
         ExRatatui.SSH.subsystem(LedTui),
-        ExRatatui.SSH.subsystem(SystemMonitorReducerTui)
+        ExRatatui.SSH.subsystem(SystemMonitorTui)
       ]
 
       names = Enum.map(subsystems, &elem(&1, 0))
