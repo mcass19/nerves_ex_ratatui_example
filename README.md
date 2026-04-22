@@ -2,6 +2,8 @@
 
 Example Nerves project demonstrating [ExRatatui](https://github.com/mcass19/ex_ratatui) on embedded hardware. Ships two TUI applications — a BEAM system monitor and an LED controller — that work on any machine. On a Raspberry Pi they render directly to the HDMI console, are reachable over SSH, and can be attached to over Erlang distribution from any BEAM node on the network with no NIF or terminal needed on the Pi.
 
+The point of this repo is to show that any Nerves codebase can easily ship a real terminal UI, using [`ExRatatui`](https://github.com/mcass19/ex_ratatui)'s SSH and distribution transports.
+
 ## Quick start
 
 ```sh
@@ -21,7 +23,7 @@ Press `q` to quit either TUI.
 
 ![System Monitor TUI running on a Raspberry Pi over SSH](https://raw.githubusercontent.com/mcass19/nerves_ex_ratatui_example/main/assets/system_monitor_tui.gif)
 
-A btop/fastfetch-inspired BEAM system monitor with a three-tab dashboard, refreshed once per second. The heavy `/proc` reads run off the server process via `Command.async/2` so the UI never blocks.
+A btop/fastfetch-inspired BEAM system monitor with a three-tab dashboard, refreshed once per second. The heavy `/proc` reads run off the server process via `Command.async/2` so the UI never blocks. See the [reducer runtime guide](https://hexdocs.pm/ex_ratatui/reducer_runtime.html).
 
 ### Tabs
 
@@ -30,10 +32,6 @@ A btop/fastfetch-inspired BEAM system monitor with a three-tab dashboard, refres
 | **1 · Overview** | Host info (OS, kernel, CPU, uptime, IP) · BEAM info (OTP/ERTS/Elixir, schedulers, processes/ports/atoms, BEAM uptime) · RAM & BEAM heap as `LineGauge`s · BEAM memory pools (`BarChart`) · Per-scheduler utilization (`BarChart`) |
 | **2 · Processes** | Top 20 processes by memory in a `Table` — memory, reductions, message queue length; scrollable with `j`/`k` |
 | **3 · Graphs** | Rolling 60-second time series: RAM % (`Chart` line), load average 1m/5m/15m (`Chart` with three datasets), average scheduler utilization (`Sparkline`) |
-
-### Reducer runtime
-
-Built on ExRatatui's reducer runtime: the per-second refresh is a declarative `subscriptions/1` tick and metric collection runs as an async command so renders stay snappy. See the [reducer runtime guide](https://hexdocs.pm/ex_ratatui/reducer_runtime.html).
 
 ### Controls
 
