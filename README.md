@@ -4,8 +4,6 @@ Example Nerves project demonstrating [ExRatatui](https://github.com/mcass19/ex_r
 
 Both apps are built on ExRatatui's **reducer runtime** (`init/1`, `update/2`, `subscriptions/1`) and showcase the v0.8 widget set: `Canvas`, `LineGauge`, `BarChart`, `Chart`, `Sparkline`, `Table`, `Tabs`, and rich-text primitives (`Line`/`Span`).
 
-![Nerves ExRatatui Demo](https://raw.githubusercontent.com/mcass19/nerves_ex_ratatui_example/main/assets/nerves_demo.gif)
-
 ## Quick start
 
 ```sh
@@ -127,6 +125,8 @@ The `listener:` option tells `attach/3` which named Listener to connect to — e
 
 ## System Monitor
 
+![System Monitor TUI running on a Raspberry Pi over SSH](https://raw.githubusercontent.com/mcass19/nerves_ex_ratatui_example/main/assets/system_monitor_tui.gif)
+
 A btop/fastfetch-inspired BEAM system monitor with a three-tab dashboard, refreshed once per second. The heavy `/proc` reads run off the server process via `Command.async/2` so the UI never blocks.
 
 ### Tabs
@@ -174,6 +174,8 @@ The periodic refresh is declared via `subscriptions/1` and reconciled by the run
 | `q` | Quit |
 
 ## LED Control
+
+![LED control TUI toggling the Pi onboard ACT LED](https://raw.githubusercontent.com/mcass19/nerves_ex_ratatui_example/main/assets/led_tui.gif)
 
 Toggle the Raspberry Pi's onboard green ACT LED from a TUI. No external wiring needed. When the LED sysfs path is not available (laptop, CI), the TUI runs in simulation mode where everything works identically but no hardware is toggled.
 
