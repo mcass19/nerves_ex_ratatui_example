@@ -28,10 +28,6 @@ defmodule NervesExRatatuiExample.Application do
         # `ExRatatui.Distributed.attach/3`. The device runs each TUI's
         # callbacks; the attaching node renders locally via its own NIF.
         Supervisor.child_spec(
-          {ExRatatui.Distributed.Listener, mod: SystemMonitorTui, name: :system_monitor_dist},
-          id: :system_monitor_dist
-        ),
-        Supervisor.child_spec(
           {ExRatatui.Distributed.Listener, mod: LedTui, name: :led_tui_dist},
           id: :led_tui_dist
         ),

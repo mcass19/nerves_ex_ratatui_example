@@ -13,15 +13,6 @@ defmodule SshSubsystemsTest do
   use ExUnit.Case, async: true
 
   describe "ExRatatui.SSH.subsystem/1 wrapping our TUIs" do
-    test "SystemMonitorTui produces a valid subsystem_spec" do
-      assert {name, {ExRatatui.SSH, init_args}} =
-               ExRatatui.SSH.subsystem(SystemMonitorTui)
-
-      assert is_list(name)
-      assert List.to_string(name) == "Elixir.SystemMonitorTui"
-      assert init_args[:mod] == SystemMonitorTui
-    end
-
     test "LedTui produces a valid subsystem_spec" do
       assert {name, {ExRatatui.SSH, init_args}} =
                ExRatatui.SSH.subsystem(LedTui)
@@ -41,11 +32,10 @@ defmodule SshSubsystemsTest do
     end
 
     test "all TUIs land on different subsystem names" do
-      {name_a, _} = ExRatatui.SSH.subsystem(SystemMonitorTui)
-      {name_b, _} = ExRatatui.SSH.subsystem(LedTui)
-      {name_c, _} = ExRatatui.SSH.subsystem(SystemMonitorReducerTui)
+      {name_a, _} = ExRatatui.SSH.subsystem(LedTui)
+      {name_b, _} = ExRatatui.SSH.subsystem(SystemMonitorReducerTui)
 
-      names = [name_a, name_b, name_c]
+      names = [name_a, name_b]
       assert names == Enum.uniq(names)
     end
   end
@@ -61,7 +51,6 @@ defmodule SshSubsystemsTest do
       # Mirror exactly what config/runtime.exs ships to :nerves_ssh.
       subsystems = [
         :ssh_sftpd.subsystem_spec(cwd: ~c"/"),
-        ExRatatui.SSH.subsystem(SystemMonitorTui),
         ExRatatui.SSH.subsystem(LedTui),
         ExRatatui.SSH.subsystem(SystemMonitorReducerTui)
       ]
@@ -74,9 +63,9 @@ defmodule SshSubsystemsTest do
 
       if Code.ensure_loaded?(options_mod) do
         opts = apply(options_mod, :new, [[subsystems: subsystems]])
-        # `:ssh_sftpd` ships with OTP, our three specs come from
+        # `:ssh_sftpd` ships with OTP, our two specs come from
         # ExRatatui — none should get filtered out as malformed.
-        assert length(opts.subsystems) == 4
+        assert length(opts.subsystems) == 3
       end
 
       # Sanity-check the shape regardless of nerves_ssh availability:
@@ -91,7 +80,6 @@ defmodule SshSubsystemsTest do
     test "all subsystems have unique names (no collisions)" do
       subsystems = [
         :ssh_sftpd.subsystem_spec(cwd: ~c"/"),
-        ExRatatui.SSH.subsystem(SystemMonitorTui),
         ExRatatui.SSH.subsystem(LedTui),
         ExRatatui.SSH.subsystem(SystemMonitorReducerTui)
       ]
